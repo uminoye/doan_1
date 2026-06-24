@@ -19,17 +19,17 @@ export const customerController = {
     res.json(result);
   }),
   getById: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await customerService.getById(req.params.id));
+    res.json(await customerService.getById(String(req.params.id)));
   }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const result = await customerService.create(req.body);
     res.status(201).json(result);
   }),
   update: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await customerService.update(req.params.id, req.body));
+    res.json(await customerService.update(String(req.params.id), req.body));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await customerService.delete(req.params.id));
+    res.json(await customerService.delete(String(req.params.id)));
   }),
 };
 
@@ -38,17 +38,17 @@ export const warehouseController = {
     res.json(await warehouseService.getAll());
   }),
   getById: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await warehouseService.getById(req.params.id));
+    res.json(await warehouseService.getById(String(req.params.id)));
   }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const result = await warehouseService.create(req.body);
     res.status(201).json(result);
   }),
   update: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await warehouseService.update(req.params.id, req.body));
+    res.json(await warehouseService.update(String(req.params.id), req.body));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await warehouseService.delete(req.params.id));
+    res.json(await warehouseService.delete(String(req.params.id)));
   }),
 };
 
@@ -64,17 +64,17 @@ export const productController = {
     res.json(result);
   }),
   getById: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productService.getById(req.params.id));
+    res.json(await productService.getById(String(req.params.id)));
   }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const result = await productService.create(req.body);
     res.status(201).json(result);
   }),
   update: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productService.update(req.params.id, req.body));
+    res.json(await productService.update(String(req.params.id), req.body));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productService.delete(req.params.id));
+    res.json(await productService.delete(String(req.params.id)));
   }),
   getCategories: asyncHandler(async (_req: Request, res: Response) => {
     res.json(await productService.getCategories());

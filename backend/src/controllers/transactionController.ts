@@ -27,7 +27,7 @@ export const productionReceiptController = {
     res.json(result);
   }),
   getById: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productionReceiptService.getById(req.params.id));
+    res.json(await productionReceiptService.getById(String(req.params.id)));
   }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId;
@@ -35,13 +35,13 @@ export const productionReceiptController = {
     res.status(201).json(result);
   }),
   confirm: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productionReceiptService.confirm(req.params.id));
+    res.json(await productionReceiptService.confirm(String(req.params.id)));
   }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productionReceiptService.cancel(req.params.id));
+    res.json(await productionReceiptService.cancel(String(req.params.id)));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productionReceiptService.delete(req.params.id));
+    res.json(await productionReceiptService.delete(String(req.params.id)));
   }),
 };
 
@@ -61,7 +61,7 @@ export const salesOrderController = {
     res.json(result);
   }),
   getById: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.getById(req.params.id));
+    res.json(await salesOrderService.getById(String(req.params.id)));
   }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId;
@@ -69,16 +69,16 @@ export const salesOrderController = {
     res.status(201).json(result);
   }),
   update: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.update(req.params.id, req.body));
+    res.json(await salesOrderService.update(String(req.params.id), req.body));
   }),
   submit: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.submit(req.params.id));
+    res.json(await salesOrderService.submit(String(req.params.id)));
   }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.cancel(req.params.id));
+    res.json(await salesOrderService.cancel(String(req.params.id)));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.delete(req.params.id));
+    res.json(await salesOrderService.delete(String(req.params.id)));
   }),
 };
 
@@ -122,7 +122,7 @@ export const stockOutboundController = {
     res.json(result);
   }),
   getById: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await stockOutboundService.getById(req.params.id));
+    res.json(await stockOutboundService.getById(String(req.params.id)));
   }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId;
@@ -130,13 +130,13 @@ export const stockOutboundController = {
     res.status(201).json(result);
   }),
   confirm: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await stockOutboundService.confirm(req.params.id));
+    res.json(await stockOutboundService.confirm(String(req.params.id)));
   }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await stockOutboundService.cancel(req.params.id));
+    res.json(await stockOutboundService.cancel(String(req.params.id)));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await stockOutboundService.delete(req.params.id));
+    res.json(await stockOutboundService.delete(String(req.params.id)));
   }),
 };
 

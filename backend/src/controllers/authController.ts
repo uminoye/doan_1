@@ -33,7 +33,7 @@ export const getAllUsers = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getUserById = asyncHandler(async (req: Request, res: Response) => {
-  const result = await userService.getById(req.params.id);
+  const result = await userService.getById(String(req.params.id));
   res.json(result);
 });
 
@@ -43,12 +43,12 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateUser = asyncHandler(async (req: Request, res: Response) => {
-  const result = await userService.update(req.params.id, req.body);
+  const result = await userService.update(String(req.params.id), req.body);
   res.json(result);
 });
 
 export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
-  const result = await userService.delete(req.params.id);
+  const result = await userService.delete(String(req.params.id));
   res.json(result);
 });
 
