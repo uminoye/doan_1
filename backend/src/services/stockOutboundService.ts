@@ -1,4 +1,3 @@
-import { stockOutboundRepo, salesOrderRepo, inventoryRepo } from '../repositories';
 import { prisma } from '../models/prisma';
 
 export class StockOutboundService {
@@ -21,18 +20,34 @@ export class StockOutboundService {
     }
 
     const [notes, total] = await Promise.all([
-      stockOutboundRepo.findAll({ skip, take: limit, where }),
-      stockOutboundRepo.count({ where }),
+      prisma.stockOutboundNote.findMany({
+        skip,
+        take: limit,
+        where,
+        include: {
+          warehouse: true,
+          salesOrder: { include: { customer: true } },
+          createdBy: { include: { role: true } },
+          items: { include: { product: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.stockOutboundNote.count({ where }),
     ]);
 
-    return {
-      data: notes,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return { data: notes, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async getById(id: string) {
-    const note = await stockOutboundRepo.findById(id);
+    const note = await prisma.stockOutboundNote.findUnique({
+      where: { id },
+      include: {
+        warehouse: true,
+        salesOrder: { include: { customer: true } },
+        createdBy: { include: { role: true } },
+        items: { include: { product: true } },
+      },
+    });
     if (!note) throw new Error('Không tìm thấy phiếu xuất');
     return note;
   }
@@ -45,26 +60,28 @@ export class StockOutboundService {
     createdById: string;
     items: { productId: string; quantity: number }[];
   }) {
-    const order = await salesOrderRepo.findById(data.salesOrderId);
+    const order = await prisma.salesOrder.findUnique({
+      where: { id: data.salesOrderId },
+      include: { outboundNote: true },
+    });
     if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (order.status !== 'warehouse_processing') {
-      throw new Error('Đơn hàng phải ở trạng thái kho đang xử lý');
-    }
+    if (order.status !== 'warehouse_processing') throw new Error('Đơn hàng phải ở trạng thái kho đang xử lý');
     if (order.outboundNote) throw new Error('Đơn hàng đã có phiếu xuất kho');
 
-    // Check stock availability
     for (const item of data.items) {
-      const balance = await inventoryRepo.getBalance(data.warehouseId, item.productId);
+      const balance = await prisma.inventoryBalance.findUnique({
+        where: { warehouseId_productId: { warehouseId: data.warehouseId, productId: item.productId } },
+      });
       if (!balance || balance.onHandQty < item.quantity) {
         const product = await prisma.product.findUnique({ where: { id: item.productId } });
         throw new Error(`Sản phẩm "${product?.name || item.productId}" không đủ tồn kho`);
       }
     }
 
-    const count = await stockOutboundRepo.count();
+    const count = await prisma.stockOutboundNote.count();
     const noteNo = `PX${String(count + 1).padStart(6, '0')}`;
 
-    const note = await stockOutboundRepo.create({
+    const note = await prisma.stockOutboundNote.create({
       data: {
         noteNo,
         salesOrderId: data.salesOrderId,
@@ -74,40 +91,38 @@ export class StockOutboundService {
         status: 'draft',
         createdById: data.createdById,
         items: {
-          create: data.items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-          })),
+          create: data.items.map(item => ({ productId: item.productId, quantity: item.quantity })),
         },
       },
     });
 
-    return stockOutboundRepo.findById(note.id);
+    return this.getById(note.id);
   }
 
   async confirm(id: string) {
-    const note = await stockOutboundRepo.findById(id);
+    const note = await prisma.stockOutboundNote.findUnique({
+      where: { id },
+      include: { items: { include: { product: true } } },
+    });
     if (!note) throw new Error('Không tìm thấy phiếu xuất');
     if (note.status !== 'draft') throw new Error('Phiếu xuất đã được xác nhận hoặc hủy');
 
-    // Check stock again before confirming
     for (const item of note.items) {
-      const balance = await inventoryRepo.getBalance(note.warehouseId, item.productId);
+      const balance = await prisma.inventoryBalance.findUnique({
+        where: { warehouseId_productId: { warehouseId: note.warehouseId, productId: item.productId } },
+      });
       if (!balance || balance.onHandQty < item.quantity) {
         throw new Error(`Sản phẩm "${item.product.name}" không đủ tồn kho để xuất`);
       }
     }
 
-    // Transaction to update inventory
     await prisma.$transaction(async (tx) => {
       for (const item of note.items) {
-        // Subtract balance
         await tx.inventoryBalance.update({
           where: { warehouseId_productId: { warehouseId: note.warehouseId, productId: item.productId } },
           data: { onHandQty: { decrement: item.quantity } },
         });
 
-        // Create transaction record
         await tx.inventoryTransaction.create({
           data: {
             warehouseId: note.warehouseId,
@@ -121,35 +136,26 @@ export class StockOutboundService {
         });
       }
 
-      // Update note status
-      await tx.stockOutboundNote.update({
-        where: { id },
-        data: { status: 'confirmed' },
-      });
-
-      // Update sales order status
-      await tx.salesOrder.update({
-        where: { id: note.salesOrderId },
-        data: { status: 'completed' },
-      });
+      await tx.stockOutboundNote.update({ where: { id }, data: { status: 'confirmed' } });
+      await tx.salesOrder.update({ where: { id: note.salesOrderId }, data: { status: 'completed' } });
     });
 
-    return stockOutboundRepo.findById(id);
+    return this.getById(id);
   }
 
   async cancel(id: string) {
-    const note = await stockOutboundRepo.findById(id);
+    const note = await prisma.stockOutboundNote.findUnique({ where: { id } });
     if (!note) throw new Error('Không tìm thấy phiếu xuất');
     if (note.status !== 'draft') throw new Error('Chỉ có thể hủy phiếu ở trạng thái nháp');
-    await stockOutboundRepo.update(id, { status: 'cancelled' });
+    await prisma.stockOutboundNote.update({ where: { id }, data: { status: 'cancelled' } });
     return { message: 'Hủy phiếu xuất thành công' };
   }
 
   async delete(id: string) {
-    const note = await stockOutboundRepo.findById(id);
+    const note = await prisma.stockOutboundNote.findUnique({ where: { id } });
     if (!note) throw new Error('Không tìm thấy phiếu xuất');
     if (note.status !== 'draft') throw new Error('Chỉ có thể xóa phiếu ở trạng thái nháp');
-    await stockOutboundRepo.delete(id);
+    await prisma.stockOutboundNote.delete({ where: { id } });
     return { message: 'Xóa phiếu xuất thành công' };
   }
 }

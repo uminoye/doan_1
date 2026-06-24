@@ -1,12 +1,14 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
-import { userRepo, roleRepository } from '../repositories';
-import { JwtPayload } from '../models/types';
+import { prisma } from '../models/prisma';
 
 export class AuthService {
   async login(email: string, password: string) {
-    const user = await userRepo.findByEmail(email);
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { role: true },
+    });
     if (!user) {
       throw new Error('Email hoặc mật khẩu không đúng');
     }
@@ -18,14 +20,14 @@ export class AuthService {
       throw new Error('Email hoặc mật khẩu không đúng');
     }
 
-    const payload: JwtPayload = {
+    const payload = {
       userId: user.id,
       email: user.email,
       roleId: user.roleId,
       roleName: user.role.name,
     };
     const token = jwt.sign(payload, config.jwtSecret, {
-      expiresIn: config.jwtExpiresIn,
+      expiresIn: '7d',
     });
 
     return {
@@ -41,7 +43,10 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const user = await userRepo.findById(userId);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    });
     if (!user) throw new Error('Không tìm thấy người dùng');
     return {
       id: user.id,
@@ -53,12 +58,12 @@ export class AuthService {
   }
 
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
-    const user = await userRepo.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error('Không tìm thấy người dùng');
     const isValid = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!isValid) throw new Error('Mật khẩu cũ không đúng');
     const hash = await bcrypt.hash(newPassword, 10);
-    await userRepo.update(userId, { passwordHash: hash });
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
     return { message: 'Đổi mật khẩu thành công' };
   }
 }
@@ -78,12 +83,12 @@ export class UserService {
     if (roleId) where.roleId = roleId;
 
     const [users, total] = await Promise.all([
-      userRepo.findAll({ skip, take: limit, where }),
-      userRepo.count({ where }),
+      prisma.user.findMany({ skip, take: limit, where, include: { role: true }, orderBy: { createdAt: 'desc' } }),
+      prisma.user.count({ where }),
     ]);
 
     return {
-      data: users.map((u: any) => ({
+      data: users.map(u => ({
         id: u.id,
         fullName: u.fullName,
         email: u.email,
@@ -97,7 +102,7 @@ export class UserService {
   }
 
   async getById(id: string) {
-    const user = await userRepo.findById(id);
+    const user = await prisma.user.findUnique({ where: { id }, include: { role: true } });
     if (!user) throw new Error('Không tìm thấy người dùng');
     return {
       id: user.id,
@@ -110,37 +115,26 @@ export class UserService {
   }
 
   async create(data: { fullName: string; email: string; password: string; roleId: string }) {
-    const existing = await userRepo.findByEmail(data.email);
+    const existing = await prisma.user.findUnique({ where: { email: data.email } });
     if (existing) throw new Error('Email đã tồn tại');
-
     const passwordHash = await bcrypt.hash(data.password, 10);
-    const user = await userRepo.create({
-      fullName: data.fullName,
-      email: data.email,
-      passwordHash,
-      roleId: data.roleId,
-      status: 'active',
+    const user = await prisma.user.create({
+      data: { fullName: data.fullName, email: data.email, passwordHash, roleId: data.roleId, status: 'active' },
     });
     return { id: user.id, fullName: user.fullName, email: user.email, roleId: user.roleId };
   }
 
   async update(id: string, data: { fullName?: string; roleId?: string; status?: string }) {
-    const user = await userRepo.update(id, data);
+    const user = await prisma.user.update({ where: { id }, data });
     return { id: user.id, fullName: user.fullName, email: user.email, roleId: user.roleId, status: user.status };
   }
 
   async delete(id: string) {
-    await userRepo.delete(id);
+    await prisma.user.delete({ where: { id } });
     return { message: 'Xóa người dùng thành công' };
   }
 
   async getRoles() {
-    return roleRepository.findAll();
-  }
-}
-
-export class RoleService {
-  async getAll() {
-    return roleRepository.findAll();
+    return prisma.role.findMany({ orderBy: { name: 'asc' } });
   }
 }

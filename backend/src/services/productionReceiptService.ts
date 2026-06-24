@@ -1,8 +1,14 @@
-import { productionReceiptRepo, inventoryRepo } from '../repositories';
 import { prisma } from '../models/prisma';
 
 export class ProductionReceiptService {
-  async getAll(params?: { page?: number; limit?: number; search?: string; status?: string; startDate?: string; endDate?: string }) {
+  async getAll(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
     const { page = 1, limit = 20, search, status, startDate, endDate } = params || {};
     const skip = (page - 1) * limit;
 
@@ -15,18 +21,32 @@ export class ProductionReceiptService {
     }
 
     const [receipts, total] = await Promise.all([
-      productionReceiptRepo.findAll({ skip, take: limit, where }),
-      productionReceiptRepo.count({ where }),
+      prisma.productionReceipt.findMany({
+        skip,
+        take: limit,
+        where,
+        include: {
+          warehouse: true,
+          createdBy: { include: { role: true } },
+          items: { include: { product: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.productionReceipt.count({ where }),
     ]);
 
-    return {
-      data: receipts,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return { data: receipts, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async getById(id: string) {
-    const receipt = await productionReceiptRepo.findById(id);
+    const receipt = await prisma.productionReceipt.findUnique({
+      where: { id },
+      include: {
+        warehouse: true,
+        createdBy: { include: { role: true } },
+        items: { include: { product: true } },
+      },
+    });
     if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
     return receipt;
   }
@@ -38,8 +58,7 @@ export class ProductionReceiptService {
     createdById: string;
     items: { productId: string; quantity: number }[];
   }) {
-    // Generate receipt number
-    const count = await productionReceiptRepo.count();
+    const count = await prisma.productionReceipt.count();
     const receiptNo = `PN${String(count + 1).padStart(6, '0')}`;
 
     const receipt = await prisma.productionReceipt.create({
@@ -51,10 +70,7 @@ export class ProductionReceiptService {
         status: 'draft',
         createdById: data.createdById,
         items: {
-          create: data.items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-          })),
+          create: data.items.map(item => ({ productId: item.productId, quantity: item.quantity })),
         },
       },
       include: {
@@ -68,21 +84,22 @@ export class ProductionReceiptService {
   }
 
   async confirm(id: string) {
-    const receipt = await productionReceiptRepo.findById(id);
+    const receipt = await prisma.productionReceipt.findUnique({
+      where: { id },
+      include: { items: true },
+    });
     if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
     if (receipt.status !== 'draft') throw new Error('Phiếu nhập đã được xác nhận hoặc hủy');
 
-    // Use transaction to update inventory
     await prisma.$transaction(async (tx) => {
       for (const item of receipt.items) {
-        // Update or create balance
         const current = await tx.inventoryBalance.findUnique({
           where: { warehouseId_productId: { warehouseId: receipt.warehouseId, productId: item.productId } },
         });
         if (current) {
           await tx.inventoryBalance.update({
             where: { warehouseId_productId: { warehouseId: receipt.warehouseId, productId: item.productId } },
-            data: { onHandQty: current.onHandQty + item.quantity },
+            data: { onHandQty: { increment: item.quantity } },
           });
         } else {
           await tx.inventoryBalance.create({
@@ -90,7 +107,6 @@ export class ProductionReceiptService {
           });
         }
 
-        // Create transaction record
         await tx.inventoryTransaction.create({
           data: {
             warehouseId: receipt.warehouseId,
@@ -104,28 +120,25 @@ export class ProductionReceiptService {
         });
       }
 
-      await tx.productionReceipt.update({
-        where: { id },
-        data: { status: 'confirmed' },
-      });
+      await tx.productionReceipt.update({ where: { id }, data: { status: 'confirmed' } });
     });
 
-    return productionReceiptRepo.findById(id);
+    return this.getById(id);
   }
 
   async cancel(id: string) {
-    const receipt = await productionReceiptRepo.findById(id);
+    const receipt = await prisma.productionReceipt.findUnique({ where: { id } });
     if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
     if (receipt.status !== 'draft') throw new Error('Chỉ có thể hủy phiếu ở trạng thái nháp');
-    await productionReceiptRepo.update(id, { status: 'cancelled' });
+    await prisma.productionReceipt.update({ where: { id }, data: { status: 'cancelled' } });
     return { message: 'Hủy phiếu nhập thành công' };
   }
 
   async delete(id: string) {
-    const receipt = await productionReceiptRepo.findById(id);
+    const receipt = await prisma.productionReceipt.findUnique({ where: { id } });
     if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
     if (receipt.status !== 'draft') throw new Error('Chỉ có thể xóa phiếu ở trạng thái nháp');
-    await productionReceiptRepo.delete(id);
+    await prisma.productionReceipt.delete({ where: { id } });
     return { message: 'Xóa phiếu nhập thành công' };
   }
 }

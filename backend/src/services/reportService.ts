@@ -1,8 +1,6 @@
-import { inventoryRepo } from '../repositories';
 import { prisma } from '../models/prisma';
 
 export class ReportService {
-  // ===== Inventory Report =====
   async getInventoryReport(params?: { warehouseId?: string; productId?: string }) {
     const { warehouseId, productId } = params || {};
 
@@ -10,9 +8,12 @@ export class ReportService {
     if (warehouseId) where.warehouseId = warehouseId;
     if (productId) where.productId = productId;
 
-    const balances = await inventoryRepo.getAllBalances({ where });
+    const balances = await prisma.inventoryBalance.findMany({
+      where,
+      include: { warehouse: true, product: true },
+    });
 
-    return balances.map((b: any) => ({
+    return balances.map(b => ({
       warehouseId: b.warehouseId,
       warehouseName: b.warehouse.name,
       warehouseCode: b.warehouse.warehouseCode,
@@ -27,13 +28,10 @@ export class ReportService {
     }));
   }
 
-  // ===== Inbound Report (Nhập kho) =====
   async getInboundReport(params?: { startDate?: string; endDate?: string; warehouseId?: string; productId?: string }) {
     const { startDate, endDate, warehouseId, productId } = params || {};
 
-    const where: any = {
-      transactionType: 'IN',
-    };
+    const where: any = { transactionType: 'IN' };
     if (warehouseId) where.warehouseId = warehouseId;
     if (productId) where.productId = productId;
     if (startDate || endDate) {
@@ -42,11 +40,14 @@ export class ReportService {
       if (endDate) where.transactionDate.lte = new Date(endDate + 'T23:59:59');
     }
 
-    const transactions = await inventoryRepo.getTransactions({ where });
+    const transactions = await prisma.inventoryTransaction.findMany({
+      where,
+      include: { warehouse: true, product: true },
+      orderBy: { transactionDate: 'desc' },
+    });
 
-    // Group by product
     const productMap = new Map<string, any>();
-    for (const t of transactions as any[]) {
+    for (const t of transactions) {
       const key = t.productId;
       if (!productMap.has(key)) {
         productMap.set(key, {
@@ -58,30 +59,20 @@ export class ReportService {
           warehouseId: t.warehouseId,
           warehouseName: t.warehouse.name,
           totalIn: 0,
-          transactions: [],
+          transactions: [] as any[],
         });
       }
       const entry = productMap.get(key);
       entry.totalIn += t.quantity;
-      entry.transactions.push({
-        date: t.transactionDate,
-        quantity: t.quantity,
-        referenceType: t.referenceType,
-        referenceId: t.referenceId,
-      });
+      entry.transactions.push({ date: t.transactionDate, quantity: t.quantity, referenceType: t.referenceType, referenceId: t.referenceId });
     }
 
-    return Array.from(productMap.values()).map((p: any) => ({
-      ...p,
-      transactionCount: p.transactions.length,
-    }));
+    return Array.from(productMap.values()).map(p => ({ ...p, transactionCount: p.transactions.length }));
   }
 
-  // ===== Outbound Report (Xuất kho) =====
   async getOutboundReport(params?: { startDate?: string; endDate?: string; warehouseId?: string; customerId?: string }) {
     const { startDate, endDate, warehouseId, customerId } = params || {};
 
-    // Get stock outbound notes
     const where: any = { status: 'confirmed' };
     if (startDate || endDate) {
       where.exportDate = {};
@@ -90,7 +81,7 @@ export class ReportService {
     }
     if (warehouseId) where.warehouseId = warehouseId;
 
-    const notes = await prisma.stockOutboundNote.findMany({
+    let notes = await prisma.stockOutboundNote.findMany({
       where,
       include: {
         warehouse: true,
@@ -100,13 +91,11 @@ export class ReportService {
       orderBy: { exportDate: 'desc' },
     });
 
-    // Filter by customer if needed
-    let filteredNotes = notes;
     if (customerId) {
-      filteredNotes = notes.filter(n => n.salesOrder.customerId === customerId);
+      notes = notes.filter(n => n.salesOrder.customerId === customerId);
     }
 
-    return filteredNotes.map((n: any) => ({
+    return notes.map(n => ({
       noteId: n.id,
       noteNo: n.noteNo,
       exportDate: n.exportDate,
@@ -115,8 +104,8 @@ export class ReportService {
       customerId: n.salesOrder.customerId,
       customerName: n.salesOrder.customer.name,
       customerCode: n.salesOrder.customer.customerCode,
-      totalQuantity: n.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
-      items: n.items.map((i: any) => ({
+      totalQuantity: n.items.reduce((s, i) => s + i.quantity, 0),
+      items: n.items.map(i => ({
         productId: i.productId,
         productSku: i.product.sku,
         productName: i.product.name,
@@ -126,7 +115,6 @@ export class ReportService {
     }));
   }
 
-  // ===== Transaction History =====
   async getTransactionHistory(params?: {
     page?: number;
     limit?: number;
@@ -150,12 +138,18 @@ export class ReportService {
     }
 
     const [transactions, total] = await Promise.all([
-      inventoryRepo.getTransactions({ skip, take: limit, where }),
+      prisma.inventoryTransaction.findMany({
+        skip,
+        take: limit,
+        where,
+        include: { warehouse: true, product: true },
+        orderBy: { transactionDate: 'desc' },
+      }),
       prisma.inventoryTransaction.count({ where }),
     ]);
 
     return {
-      data: (transactions as any[]).map(t => ({
+      data: transactions.map(t => ({
         id: t.id,
         date: t.transactionDate,
         warehouseId: t.warehouseId,
@@ -173,18 +167,12 @@ export class ReportService {
     };
   }
 
-  // ===== Dashboard Stats =====
   async getDashboardStats() {
     const [
-      totalProducts,
-      totalCustomers,
-      totalWarehouses,
-      totalOrders,
-      pendingOrders,
-      completedOrders,
-      totalInbound,
-      totalOutbound,
-      totalBalance,
+      totalProducts, totalCustomers, totalWarehouses, totalOrders,
+      pendingOrders, completedOrders,
+      totalInbound, totalOutbound, totalBalance,
+      recentOrders, recentInbound,
     ] = await Promise.all([
       prisma.product.count(),
       prisma.customer.count(),
@@ -195,22 +183,14 @@ export class ReportService {
       prisma.inventoryTransaction.aggregate({ where: { transactionType: 'IN' }, _sum: { quantity: true } }),
       prisma.inventoryTransaction.aggregate({ where: { transactionType: 'OUT' }, _sum: { quantity: true } }),
       prisma.inventoryBalance.aggregate({ _sum: { onHandQty: true } }),
+      prisma.salesOrder.findMany({ take: 5, orderBy: { createdAt: 'desc' }, include: { customer: true, createdBy: true } }),
+      prisma.productionReceipt.findMany({
+        where: { status: 'confirmed' },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { warehouse: true, items: { include: { product: true } } },
+      }),
     ]);
-
-    // Recent orders
-    const recentOrders = await prisma.salesOrder.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      include: { customer: true, createdBy: true },
-    });
-
-    // Recent inbound
-    const recentInbound = await prisma.productionReceipt.findMany({
-      where: { status: 'confirmed' },
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      include: { warehouse: true, items: { include: { product: true } } },
-    });
 
     return {
       totals: {
@@ -224,20 +204,13 @@ export class ReportService {
         totalOutbound: totalOutbound._sum.quantity || 0,
         totalBalance: totalBalance._sum.onHandQty || 0,
       },
-      recentOrders: recentOrders.map((o: any) => ({
-        id: o.id,
-        orderNo: o.orderNo,
-        customerName: o.customer.name,
-        status: o.status,
-        orderDate: o.orderDate,
-        createdBy: o.createdBy.fullName,
+      recentOrders: recentOrders.map(o => ({
+        id: o.id, orderNo: o.orderNo, customerName: o.customer.name,
+        status: o.status, orderDate: o.orderDate, createdBy: o.createdBy.fullName,
       })),
-      recentInbound: recentInbound.map((r: any) => ({
-        id: r.id,
-        receiptNo: r.receiptNo,
-        warehouseName: r.warehouse.name,
-        totalItems: r.items.reduce((s: number, i: any) => s + i.quantity, 0),
-        receiptDate: r.receiptDate,
+      recentInbound: recentInbound.map(r => ({
+        id: r.id, receiptNo: r.receiptNo, warehouseName: r.warehouse.name,
+        totalItems: r.items.reduce((s, i) => s + i.quantity, 0), receiptDate: r.receiptDate,
       })),
     };
   }
