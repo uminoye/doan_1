@@ -28,13 +28,18 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Build TypeScript
-        run: npm run build
-
       - name: Push Database Schema
         run: npx prisma db push
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Seed Database
+        run: npx tsx prisma/seed.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Build TypeScript
+        run: npm run build
 
       - name: Deploy to Render
         run: |
