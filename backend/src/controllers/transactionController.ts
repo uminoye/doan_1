@@ -94,9 +94,8 @@ export const logisticsController = {
     res.json(result);
   }),
   receiveOrder: asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.userId;
     const { salesOrderId, note } = req.body;
-    res.json(await logisticsService.receiveOrder(salesOrderId, userId, note));
+    res.json(await logisticsService.receiveOrder(salesOrderId, note));
   }),
   forwardToWarehouse: asyncHandler(async (req: Request, res: Response) => {
     const { salesOrderId, note } = req.body;

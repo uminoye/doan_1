@@ -32,7 +32,7 @@ export class LogisticsService {
     };
   }
 
-  async receiveOrder(salesOrderId: string, receivedBy: string, note?: string) {
+  async receiveOrder(salesOrderId: string, note?: string) {
     const order = await prisma.salesOrder.findUnique({
       where: { id: salesOrderId },
       include: { delivery: true },
@@ -44,7 +44,6 @@ export class LogisticsService {
     await prisma.deliveryRequest.create({
       data: {
         salesOrderId,
-        receivedBy,
         receivedAt: new Date(),
         note,
         status: 'received',
