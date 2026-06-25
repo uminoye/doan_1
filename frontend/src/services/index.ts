@@ -75,7 +75,7 @@ export const warehouseService = {
   getById(id: string) {
     return api.get(`/master/warehouses/${id}`);
   },
-  create(data: { warehouseCode: string; name: string; location?: string }) {
+  create(data: { warehouseCode?: string; name: string; location?: string }) {
     return api.post('/master/warehouses', data);
   },
   update(id: string, data: Partial<{ name: string; location: string }>) {

@@ -254,7 +254,6 @@ export default function ProductsPage() {
     setWarehouseError('');
     try {
       await warehouseService.create({
-        warehouseCode: warehouseForm.warehouseCode || undefined,
         name: warehouseForm.name,
         location: warehouseForm.location || undefined,
       });
