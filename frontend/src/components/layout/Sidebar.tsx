@@ -29,7 +29,7 @@ export default function Sidebar({ user }: SidebarProps) {
   const filteredItems = menuItems.filter(item => item.roles.includes(user.role));
 
   return (
-    <aside className="w-56 min-h-screen bg-slate-800 text-white flex flex-col">
+    <aside className="w-56 min-h-screen bg-slate-800 text-white flex flex-col overflow-hidden flex-shrink-0">
       <div className="p-4 border-b border-slate-700">
         <h1 className="text-lg font-bold text-blue-400">WMS System</h1>
         <p className="text-xs text-slate-400 mt-1">Quản lý Kho hàng</p>
