@@ -172,7 +172,16 @@ export class ProductService {
   async delete(id: string) {
     const product = await productRepo.findById(id);
     if (!product) throw new Error('Không tìm thấy sản phẩm');
-    await productRepo.delete(id);
+
+    await prisma.$transaction([
+      prisma.inventoryTransaction.deleteMany({ where: { productId: id } }),
+      prisma.inventoryBalance.deleteMany({ where: { productId: id } }),
+      prisma.stockOutboundItem.deleteMany({ where: { productId: id } }),
+      prisma.salesOrderItem.deleteMany({ where: { productId: id } }),
+      prisma.productionReceiptItem.deleteMany({ where: { productId: id } }),
+      prisma.product.delete({ where: { id } }),
+    ]);
+
     return { message: 'Xóa sản phẩm thành công' };
   }
 
