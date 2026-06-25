@@ -129,7 +129,7 @@ model ProductionReceiptItem {
   createdAt   DateTime @default(now())
 
   receipt ProductionReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  product Product           @relation(fields: [productId], references: [id])
+  product Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([receiptId])
 }
@@ -168,7 +168,7 @@ model SalesOrderItem {
   createdAt     DateTime @default(now())
 
   salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
-  product    Product    @relation(fields: [productId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([salesOrderId])
 }
@@ -221,7 +221,7 @@ model StockOutboundItem {
   createdAt       DateTime @default(now())
 
   outboundNote StockOutboundNote @relation(fields: [outboundNoteId], references: [id], onDelete: Cascade)
-  product      Product           @relation(fields: [productId], references: [id])
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([outboundNoteId])
 }
@@ -236,8 +236,8 @@ model InventoryBalance {
   reservedQty   Int      @default(0)
   updatedAt     DateTime @updatedAt
 
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
-  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([warehouseId, productId])
   @@index([warehouseId])
