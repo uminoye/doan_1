@@ -163,20 +163,20 @@ export function ProductCard({ product, onEdit, onDelete, className }: ProductCar
     <div className={clsx(
       'bg-white rounded-2xl border border-gray-200 overflow-hidden',
       'hover:shadow-md hover:border-gray-300 transition-all duration-200',
-      'flex flex-col',
+      'flex flex-col min-w-0',
       className
     )}>
       {/* Image */}
-      <div className="relative w-full aspect-square bg-gray-50 overflow-hidden">
+      <div className="relative w-full pt-[75%] bg-gray-50 overflow-hidden flex-shrink-0">
         {product.imageUrl ? (
           <img
             src={product.imageUrl}
             alt={product.name}
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover"
             onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-5xl opacity-20">📦</span>
           </div>
         )}
@@ -194,7 +194,7 @@ export function ProductCard({ product, onEdit, onDelete, className }: ProductCar
         {/* Name & SKU */}
         <div className="mb-3">
           <p className="text-xs text-gray-400 font-mono mb-1">{product.sku}</p>
-          <h3 className="text-base font-semibold text-gray-800 leading-snug line-clamp-2">
+          <h3 className="text-base font-semibold text-gray-800 leading-snug line-clamp-2 break-words">
             {product.name}
           </h3>
         </div>
