@@ -7,6 +7,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { productService, warehouseService, categoryService } from '@/services';
 import { Product, Warehouse, Category } from '@/types';
+import { clsx } from 'clsx';
 
 // ============ STOCK FILTER ============
 type StockFilter = 'all' | 'low' | 'out';
