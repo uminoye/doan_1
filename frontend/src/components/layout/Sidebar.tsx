@@ -54,9 +54,13 @@ export default function Sidebar({ user }: SidebarProps) {
         })}
       </nav>
       <div className="p-3 border-t border-slate-700 text-xs text-slate-400">
-        <p>Logged in as</p>
-        <p className="text-slate-200 font-medium truncate">{user.fullName}</p>
-        <p className="capitalize">{user.role}</p>
+        <p className="truncate">
+          <span className="text-slate-500">Đăng nhập: </span>
+          <span className="text-slate-200 font-medium">{user.fullName}</span>
+        </p>
+        <p className="truncate capitalize">
+          <span className="text-slate-500">Vai trò: </span>{user.role}
+        </p>
       </div>
     </aside>
   );

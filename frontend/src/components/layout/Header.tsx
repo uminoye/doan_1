@@ -16,9 +16,9 @@ export default function Header() {
       <div className="text-sm text-gray-600">
         Hệ thống Quản lý Kho hàng - Xuất Nhập Tồn
       </div>
-      <div className="flex items-center gap-4">
-        <div className="text-right">
-          <p className="text-sm font-medium text-gray-800">{user?.fullName}</p>
+      <div className="flex items-center gap-3">
+        <div className="text-right min-w-0">
+          <p className="text-sm font-medium text-gray-800 truncate max-w-[180px]">{user?.fullName}</p>
           <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
         </div>
         <button
