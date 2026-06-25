@@ -18,6 +18,20 @@ export default function CustomersPage() {
   const [form, setForm] = useState({ customerCode: '', name: '', phone: '', address: '', contactPerson: '' });
   const [error, setError] = useState('');
 
+  const generateNextCode = useCallback(async (): Promise<string> => {
+    try {
+      const res = await customerService.getAll({ page: 1, limit: 1000 });
+      const codes = res.data.data.map((c: Customer) => {
+        const m = c.customerCode.match(/KH-(\d+)/);
+        return m ? parseInt(m[1]) : 0;
+      });
+      const maxNum = codes.length ? Math.max(...codes) : 0;
+      return `KH-${String(maxNum + 1).padStart(4, '0')}`;
+    } catch {
+      return `KH-0001`;
+    }
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -29,8 +43,20 @@ export default function CustomersPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const openCreate = () => { setEditItem(null); setForm({ customerCode: '', name: '', phone: '', address: '', contactPerson: '' }); setError(''); setShowModal(true); };
-  const openEdit = (c: Customer) => { setEditItem(c); setForm({ customerCode: c.customerCode, name: c.name, phone: c.phone || '', address: c.address || '', contactPerson: c.contactPerson || '' }); setError(''); setShowModal(true); };
+  const openCreate = async () => {
+    setEditItem(null);
+    setError('');
+    const nextCode = await generateNextCode();
+    setForm({ customerCode: nextCode, name: '', phone: '', address: '', contactPerson: '' });
+    setShowModal(true);
+  };
+
+  const openEdit = (c: Customer) => {
+    setEditItem(c);
+    setForm({ customerCode: c.customerCode, name: c.name, phone: c.phone || '', address: c.address || '', contactPerson: c.contactPerson || '' });
+    setError('');
+    setShowModal(true);
+  };
 
   const handleSave = async () => {
     setSaving(true); setError('');
@@ -52,18 +78,28 @@ export default function CustomersPage() {
   return (
     <AppLayout>
       <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Quản lý Khách hàng</h1>
-            <p className="text-sm text-gray-500 mt-1">Danh sách khách hàng mua hàng</p>
-          </div>
-          <Button onClick={openCreate}>+ Thêm khách hàng</Button>
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Quản lý Khách hàng</h1>
+          <p className="text-sm text-gray-500 mt-1">Danh sách khách hàng mua hàng</p>
         </div>
 
         <Card className="p-0">
-          <div className="p-4 border-b flex items-center gap-3">
-            <Input placeholder="Tìm kiếm..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="max-w-xs" />
+          {/* Card Header - Search + Add Button */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-100">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+              <Input
+                placeholder="Tìm kiếm..."
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1); }}
+                className="pl-9 w-64"
+              />
+            </div>
+            <Button onClick={openCreate}>+ Thêm mới</Button>
           </div>
+
+          {/* Table */}
           {loading ? <div className="flex justify-center py-12"><Spinner /></div> : !data?.data.length ? <EmptyState icon="👥" message="Chưa có khách hàng nào" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -105,7 +141,13 @@ export default function CustomersPage() {
         <div className="space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Mã khách hàng" value={form.customerCode} onChange={e => setForm({ ...form, customerCode: e.target.value })} required disabled={!!editItem} />
+            <Input
+              label="Mã khách hàng"
+              value={form.customerCode}
+              onChange={e => setForm({ ...form, customerCode: e.target.value })}
+              required
+              disabled={!editItem}
+            />
             <Input label="Tên khách hàng" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
           </div>
           <Input label="Điện thoại" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
