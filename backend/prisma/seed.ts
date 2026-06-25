@@ -135,7 +135,6 @@ async function main() {
   // ===== SALES ORDERS (for logistics demo) =====
   const salesUser = await prisma.user.findFirst({ where: { email: 'sales@wms.com' } });
   const abcCustomer = createdCustomers[0]; // Công ty TNHH ABC
-  const hanoiWh = createdWarehouses[0];
   const sampleProducts = createdProducts.slice(0, 3);
 
   const salesOrder = await prisma.salesOrder.create({
