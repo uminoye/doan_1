@@ -1,13 +1,12 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Card, Badge, Modal, Pagination, EmptyState, Spinner } from '@/components/ui/Misc';
+import { Card, Modal, Pagination, EmptyState, Spinner, ProductCard } from '@/components/ui/Misc';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { productService, warehouseService, categoryService } from '@/services';
 import { Product, Warehouse, Category } from '@/types';
-import { clsx } from 'clsx';
 
 // ============ STOCK FILTER ============
 type StockFilter = 'all' | 'low' | 'out';
@@ -308,13 +307,6 @@ export default function ProductsPage() {
     ...categories.map(c => ({ value: c, label: c })),
   ], [categories]);
 
-  // ---- Stock badge ----
-  const getStockBadge = (p: Product) => {
-    if (p.isOutOfStock) return <Badge variant="danger">Hết hàng</Badge>;
-    if (p.isLowStock) return <Badge variant="warning">Sắp hết</Badge>;
-    return <Badge variant="success">Còn hàng</Badge>;
-  };
-
   return (
     <AppLayout>
       <div className="space-y-5">
@@ -387,74 +379,30 @@ export default function ProductsPage() {
           </div>
         </Card>
 
-        {/* ===== TABLE ===== */}
-        <Card className="p-0 overflow-hidden">
+        {/* ===== PRODUCT GRID ===== */}
+        <Card className="p-5">
           {loading ? (
             <div className="flex justify-center py-12"><Spinner /></div>
           ) : !products.length ? (
             <EmptyState icon="📦" message="Không tìm thấy sản phẩm nào" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">SKU</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Tên sản phẩm</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Danh mục</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Đơn vị</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Đơn giá</th>
-                    {warehouses.map(w => (
-                      <th key={w.id} className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap min-w-[80px]">{w.name}</th>
-                    ))}
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Tồn kho</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Tối thiểu</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Trạng thái</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {products.map(p => (
-                    <tr key={p.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-mono font-medium text-blue-600 whitespace-nowrap">{p.sku}</td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-gray-800">{p.name}</div>
-                        {p.imageUrl && <img src={p.imageUrl} alt="" className="h-8 w-8 object-cover rounded mt-1" onError={e => (e.currentTarget.style.display = 'none')} />}
-                      </td>
-                      <td className="px-4 py-3"><Badge variant="default">{p.category || '—'}</Badge></td>
-                      <td className="px-4 py-3 text-center text-gray-600">{p.unit}</td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-800 whitespace-nowrap">{Number(p.salePrice).toLocaleString()} đ</td>
-                      {warehouses.map(w => {
-                        const stock = p.stockByWarehouse?.[w.id];
-                        const qty = stock?.onHandQty ?? 0;
-                        return (
-                          <td key={w.id} className="px-4 py-3 text-center">
-                            {qty > 0 ? (
-                              <span className={clsx('font-medium', qty <= (p.minStock || 0) && qty > 0 ? 'text-yellow-600' : 'text-gray-700')}>{qty}</span>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td className="px-4 py-3 text-center font-semibold text-gray-800 whitespace-nowrap">{p.totalOnHand ?? 0}</td>
-                      <td className="px-4 py-3 text-center text-gray-500 whitespace-nowrap">{p.minStock || 0}</td>
-                      <td className="px-4 py-3 text-center">{getStockBadge(p)}</td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openEditProduct(p)}>Sửa</Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteProduct(p.id)} className="text-red-500 hover:bg-red-50">Xóa</Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {total > 0 && (
-            <div className="p-4 border-t">
-              <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+                {products.map(p => (
+                  <ProductCard
+                    key={p.id}
+                    product={p}
+                    onEdit={openEditProduct}
+                    onDelete={handleDeleteProduct}
+                  />
+                ))}
+              </div>
+              {total > 0 && (
+                <div className="mt-5">
+                  <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
+                </div>
+              )}
+            </>
           )}
         </Card>
       </div>

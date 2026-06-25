@@ -127,6 +127,123 @@ interface PaginationProps {
   onPageChange: (page: number) => void;
 }
 
+interface ProductCardProps {
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    category?: string;
+    unit: string;
+    imageUrl?: string;
+    salePrice: number;
+    totalOnHand?: number;
+    minStock?: number;
+    isLowStock?: boolean;
+    isOutOfStock?: boolean;
+  };
+  onEdit: (product: any) => void;
+  onDelete: (id: string) => void;
+  className?: string;
+}
+
+export function ProductCard({ product, onEdit, onDelete, className }: ProductCardProps) {
+  const stockQty = product.totalOnHand ?? 0;
+  const stockColor = product.isOutOfStock
+    ? 'text-red-500'
+    : product.isLowStock
+    ? 'text-yellow-600'
+    : 'text-gray-800';
+  const stockBg = product.isOutOfStock
+    ? 'bg-red-50'
+    : product.isLowStock
+    ? 'bg-yellow-50'
+    : 'bg-gray-50';
+
+  return (
+    <div className={clsx(
+      'bg-white rounded-2xl border border-gray-200 overflow-hidden',
+      'hover:shadow-md hover:border-gray-300 transition-all duration-200',
+      'flex flex-col',
+      className
+    )}>
+      {/* Image */}
+      <div className="relative w-full aspect-square bg-gray-50 overflow-hidden">
+        {product.imageUrl ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="w-full h-full object-cover"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-5xl opacity-20">📦</span>
+          </div>
+        )}
+
+        {/* Category badge overlaid on image */}
+        {product.category && (
+          <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full shadow-sm border border-gray-200">
+            {product.category}
+          </span>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="p-4 flex flex-col flex-1">
+        {/* Name & SKU */}
+        <div className="mb-3">
+          <p className="text-xs text-gray-400 font-mono mb-1">{product.sku}</p>
+          <h3 className="text-base font-semibold text-gray-800 leading-snug line-clamp-2">
+            {product.name}
+          </h3>
+        </div>
+
+        {/* Price */}
+        <div className="mt-auto mb-3">
+          <p className="text-lg font-bold text-gray-900">
+            {Number(product.salePrice).toLocaleString()} <span className="text-sm font-normal text-gray-500">đ</span>
+          </p>
+        </div>
+
+        {/* Stock indicator */}
+        <div className={clsx('rounded-xl p-3 mb-4', stockBg)}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-gray-500 font-medium">Tồn kho</p>
+              <p className={clsx('text-base font-bold mt-0.5', stockColor)}>
+                {product.isOutOfStock ? 'Hết hàng' : `${stockQty} ${product.unit}`}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500 font-medium">Tối thiểu</p>
+              <p className="text-base font-bold text-gray-500 mt-0.5">
+                {product.minStock ?? 0} <span className="font-normal text-gray-400">{product.unit}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onEdit(product)}
+            className="flex-1 py-2 px-3 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200"
+          >
+            Sửa
+          </button>
+          <button
+            onClick={() => onDelete(product.id)}
+            className="flex-1 py-2 px-3 text-sm font-medium text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-200"
+          >
+            Xóa
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Pagination({ page, totalPages, total, onPageChange }: PaginationProps) {
   if (totalPages <= 1) return null;
   return (
