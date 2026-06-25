@@ -1,66 +1,179 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { authService } from '@/services';
 import { User } from '@/types';
+import { clsx } from 'clsx';
 
 interface SidebarProps {
   user: User;
 }
 
-const menuItems = [
-  { label: 'Tổng quan', href: '/', icon: '📊', roles: ['admin', 'sales', 'logistics', 'warehouse', 'factory'] },
-  { label: 'Sản phẩm', href: '/products/', icon: '📦', roles: ['admin'] },
-  { label: 'Khách hàng', href: '/customers/', icon: '👥', roles: ['admin', 'sales'] },
-  { label: 'Kho hàng', href: '/warehouses/', icon: '🏭', roles: ['admin'] },
-  { label: 'Người dùng', href: '/users/', icon: '👤', roles: ['admin'] },
-  { label: 'Phiếu nhập kho', href: '/production-receipts/', icon: '📥', roles: ['admin', 'factory'] },
-  { label: 'Đơn hàng bán', href: '/sales-orders/', icon: '🛒', roles: ['admin', 'sales'] },
-  { label: 'Logistics', href: '/logistics/', icon: '🚚', roles: ['admin', 'logistics'] },
-  { label: 'Xuất kho', href: '/warehouse-outbound/', icon: '📤', roles: ['admin', 'warehouse'] },
-  { label: 'Báo cáo nhập', href: '/reports/inbound/', icon: '📈', roles: ['admin'] },
-  { label: 'Báo cáo xuất', href: '/reports/outbound/', icon: '📉', roles: ['admin'] },
-  { label: 'Tồn kho', href: '/reports/inventory/', icon: '🏬', roles: ['admin'] },
+interface MenuSection {
+  title: string;
+  items: {
+    label: string;
+    href: string;
+    icon: string;
+    color?: string;
+    roles: string[];
+  }[];
+}
+
+const menuSections: MenuSection[] = [
+  {
+    title: 'Menu',
+    items: [
+      { label: 'Tổng quan', href: '/', icon: '📊', color: 'text-blue-400', roles: ['admin', 'sales', 'logistics', 'warehouse', 'factory'] },
+      { label: 'Sản phẩm', href: '/products/', icon: '📦', color: 'text-blue-400', roles: ['admin'] },
+      { label: 'Khách hàng', href: '/customers/', icon: '👥', color: 'text-blue-400', roles: ['admin', 'sales'] },
+      { label: 'Kho hàng', href: '/warehouses/', icon: '🏭', color: 'text-blue-400', roles: ['admin'] },
+      { label: 'Người dùng', href: '/users/', icon: '👤', color: 'text-blue-400', roles: ['admin'] },
+    ],
+  },
+  {
+    title: 'Warehouse Management',
+    items: [
+      { label: 'Phiếu nhập kho', href: '/production-receipts/', icon: '📥', color: 'text-blue-400', roles: ['admin', 'factory'] },
+      { label: 'Đơn hàng bán', href: '/sales-orders/', icon: '🛒', color: 'text-blue-400', roles: ['admin', 'sales'] },
+      { label: 'Logistics', href: '/logistics/', icon: '🚚', color: 'text-blue-400', roles: ['admin', 'logistics'] },
+      { label: 'Xuất kho', href: '/warehouse-outbound/', icon: '📤', color: 'text-blue-400', roles: ['admin', 'warehouse'] },
+    ],
+  },
+  {
+    title: 'Reports',
+    items: [
+      { label: 'Báo cáo nhập', href: '/reports/inbound/', icon: '📈', color: 'text-green-400', roles: ['admin'] },
+      { label: 'Báo cáo xuất', href: '/reports/outbound/', icon: '📉', color: 'text-green-400', roles: ['admin'] },
+      { label: 'Tồn kho', href: '/reports/inventory/', icon: '🏬', color: 'text-green-400', roles: ['admin'] },
+    ],
+  },
 ];
+
+const STORAGE_KEY = 'wms-sidebar-collapsed';
 
 export default function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
-  const filteredItems = menuItems.filter(item => item.roles.includes(user.role));
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== null) setCollapsed(stored === 'true');
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem(STORAGE_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const initials = user.fullName
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 
   return (
-    <aside className="w-56 min-h-screen bg-slate-800 text-white flex flex-col overflow-hidden flex-shrink-0">
-      <div className="p-4 border-b border-slate-700">
-        <h1 className="text-lg font-bold text-blue-400">WMS System</h1>
-        <p className="text-xs text-slate-400 mt-1">Quản lý Kho hàng</p>
+    <aside
+      className={clsx(
+        'min-h-screen bg-slate-800 text-white flex flex-col flex-shrink-0 overflow-hidden',
+        'transition-all duration-300 ease-in-out',
+        collapsed ? 'w-16' : 'w-56'
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-3 h-14 border-b border-slate-700 flex-shrink-0">
+        <button
+          onClick={toggleCollapsed}
+          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-slate-700 transition-colors"
+          title={collapsed ? 'Mở rộng' : 'Thu gọn'}
+        >
+          <svg className="w-5 h-5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        {!collapsed && (
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+              <span className="text-sm font-bold">W</span>
+            </div>
+            <span className="font-bold text-blue-400 truncate">WMS System</span>
+          </div>
+        )}
       </div>
-      <nav className="flex-1 py-2 overflow-y-auto">
-        {filteredItems.map(item => {
-          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+        {menuSections.map(section => {
+          const filteredItems = section.items.filter(item => item.roles.includes(user.role));
+          if (filteredItems.length === 0) return null;
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center px-4 py-2.5 mx-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-              }`}
-            >
-              <span className="mr-3 text-base">{item.icon}</span>
-              {item.label}
-            </Link>
+            <div key={section.title}>
+              {!collapsed && (
+                <p className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  {section.title}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {filteredItems.map(item => {
+                  const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={clsx(
+                        'flex items-center rounded-lg text-sm transition-colors relative group',
+                        collapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-2.5 py-2',
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                      )}
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <span className={clsx('text-base flex-shrink-0', !isActive && item.color)}>
+                        {item.icon}
+                      </span>
+                      {!collapsed && (
+                        <span className="truncate">{item.label}</span>
+                      )}
+                      {/* Tooltip when collapsed */}
+                      {collapsed && (
+                        <span className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+                          {item.label}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </nav>
-      <div className="p-3 border-t border-slate-700 text-xs text-slate-400">
-        <p className="truncate">
-          <span className="text-slate-500">Đăng nhập: </span>
-          <span className="text-slate-200 font-medium">{user.fullName}</span>
-        </p>
-        <p className="truncate capitalize">
-          <span className="text-slate-500">Vai trò: </span>{user.role}
-        </p>
+
+      {/* Footer - User Info */}
+      <div className="p-2.5 border-t border-slate-700 flex-shrink-0">
+        <div className={clsx('flex items-center gap-2.5', collapsed && 'justify-center')}>
+          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 text-xs font-bold">
+            {initials}
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-white truncate">{user.fullName}</p>
+              <p className="text-[10px] text-slate-400 capitalize truncate">{user.role}</p>
+            </div>
+          )}
+          {!collapsed && (
+            <span className="relative flex-shrink-0">
+              <span className="absolute top-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-slate-800" />
+            </span>
+          )}
+        </div>
       </div>
     </aside>
   );
