@@ -23,30 +23,38 @@ interface MenuSection {
 
 const menuSections: MenuSection[] = [
   {
-    title: 'Menu',
+    title: 'Tổng quan',
     items: [
-      { label: 'Tổng quan', href: '/', icon: '📊', color: 'text-blue-400', roles: ['admin', 'sales', 'logistics', 'warehouse', 'factory'] },
+      { label: 'Dashboard', href: '/', icon: '📊', color: 'text-blue-400', roles: ['admin'] },
+      { label: 'Đơn hàng của tôi', href: '/', icon: '📈', color: 'text-blue-400', roles: ['sales'] },
+      { label: 'Tổng quan Kho', href: '/', icon: '🏢', color: 'text-blue-400', roles: ['warehouse'] },
+      { label: 'Sản xuất', href: '/', icon: '🏭', color: 'text-blue-400', roles: ['factory'] },
+      { label: 'Tiếp nhận Giao', href: '/', icon: '🚚', color: 'text-blue-400', roles: ['logistics'] },
+    ],
+  },
+  {
+    title: 'Quản lý danh mục',
+    items: [
       { label: 'Sản phẩm', href: '/products/', icon: '📦', color: 'text-blue-400', roles: ['admin'] },
-      { label: 'Khách hàng', href: '/customers/', icon: '👥', color: 'text-blue-400', roles: ['admin', 'sales'] },
-      { label: 'Kho hàng', href: '/warehouses/', icon: '🏭', color: 'text-blue-400', roles: ['admin'] },
-      { label: 'Người dùng', href: '/users/', icon: '👤', color: 'text-blue-400', roles: ['admin'] },
+      { label: 'Khách hàng', href: '/customers/', icon: '🤝', color: 'text-blue-400', roles: ['admin', 'sales'] },
+      { label: 'Tài khoản', href: '/users/', icon: '👥', color: 'text-blue-400', roles: ['admin'] },
     ],
   },
   {
-    title: 'Warehouse Management',
+    title: 'Nghiệp vụ Kho',
     items: [
-      { label: 'Phiếu nhập kho', href: '/production-receipts/', icon: '📥', color: 'text-blue-400', roles: ['admin', 'factory'] },
-      { label: 'Đơn hàng bán', href: '/sales-orders/', icon: '🛒', color: 'text-blue-400', roles: ['admin', 'sales'] },
-      { label: 'Logistics', href: '/logistics/', icon: '🚚', color: 'text-blue-400', roles: ['admin', 'logistics'] },
-      { label: 'Xuất kho', href: '/warehouse-outbound/', icon: '📤', color: 'text-blue-400', roles: ['admin', 'warehouse'] },
+      { label: 'Đơn hàng', href: '/sales-orders/', icon: '🛒', color: 'text-blue-400', roles: ['admin', 'sales'] },
+      { label: 'Tiếp nhận Giao hàng', href: '/logistics/', icon: '🚚', color: 'text-blue-400', roles: ['admin', 'logistics'] },
+      { label: 'Phiếu Nhập Kho', href: '/production-receipts/', icon: '📥', color: 'text-blue-400', roles: ['admin', 'warehouse', 'factory'] },
+      { label: 'Phiếu Xuất Kho', href: '/warehouse-outbound/', icon: '📤', color: 'text-blue-400', roles: ['admin', 'warehouse'] },
     ],
   },
   {
-    title: 'Reports',
+    title: 'Báo cáo',
     items: [
-      { label: 'Báo cáo nhập', href: '/reports/inbound/', icon: '📈', color: 'text-green-400', roles: ['admin'] },
-      { label: 'Báo cáo xuất', href: '/reports/outbound/', icon: '📉', color: 'text-green-400', roles: ['admin'] },
-      { label: 'Tồn kho', href: '/reports/inventory/', icon: '🏬', color: 'text-green-400', roles: ['admin'] },
+      { label: 'Tồn kho', href: '/reports/inventory/', icon: '🏬', color: 'text-green-400', roles: ['admin', 'warehouse'] },
+      { label: 'Nhập kho', href: '/reports/inbound/', icon: '📥', color: 'text-green-400', roles: ['admin'] },
+      { label: 'Xuất kho', href: '/reports/outbound/', icon: '📤', color: 'text-green-400', roles: ['admin'] },
     ],
   },
 ];

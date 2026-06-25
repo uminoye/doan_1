@@ -134,10 +134,11 @@ async function main() {
 
   // ===== SALES ORDERS (for logistics demo) =====
   const salesUser = await prisma.user.findFirst({ where: { email: 'sales@wms.com' } });
-  const abcCustomer = createdCustomers[0]; // Công ty TNHH ABC
+  const logisticsUser = await prisma.user.findFirst({ where: { email: 'logistics@wms.com' } });
+  const abcCustomer = createdCustomers[0];
   const sampleProducts = createdProducts.slice(0, 3);
 
-  await prisma.salesOrder.upsert({
+  const sampleOrder = await prisma.salesOrder.upsert({
     where: { orderNo: 'DH-2024-001' },
     update: {},
     create: {
@@ -146,15 +147,33 @@ async function main() {
       createdById: salesUser!.id,
       status: 'submitted',
       orderDate: new Date(),
-      items: {
-        create: sampleProducts.map((p) => ({
-          productId: p.id,
-          quantity: 10,
-          unitPrice: p.salePrice,
-        })),
-      },
+      expectedDeliveryDate: new Date(Date.now() + 3 * 86400000),
     },
   });
+
+  // Xóa items cũ + tạo lại (idempotent)
+  await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: sampleOrder.id } });
+  await prisma.salesOrderItem.createMany({
+    data: sampleProducts.map((p) => ({
+      salesOrderId: sampleOrder.id,
+      productId: p.id,
+      quantity: 10,
+      unitPrice: p.salePrice,
+    })),
+  });
+
+  // Delivery request đã được logistics tiếp nhận
+  await prisma.deliveryRequest.upsert({
+    where: { salesOrderId: sampleOrder.id },
+    update: {},
+    create: {
+      salesOrderId: sampleOrder.id,
+      receivedBy: logisticsUser!.fullName,
+      receivedAt: new Date(),
+      status: 'warehouse_processing',
+    },
+  });
+
   console.log('✅ Sales orders created (ready for logistics)');
 
   console.log('\n🎉 Seed completed!');

@@ -156,7 +156,10 @@ export const productionReceiptService = {
   create(data: { warehouseId: string; receiptDate?: string; note?: string; items: { productId: string; quantity: number }[] }) {
     return api.post('/transactions/production-receipts', data);
   },
-  confirm(id: string) {
+  factoryRespond(data: { receiptId: string; action: 'accept' | 'reject'; expectedDeliveryDate?: string; reason?: string }) {
+    return api.post(`/transactions/production-receipts/${data.receiptId}/factory-respond`, data);
+  },
+  confirmReceipt(id: string) {
     return api.post(`/transactions/production-receipts/${id}/confirm`);
   },
   cancel(id: string) {
@@ -174,14 +177,29 @@ export const salesOrderService = {
   getById(id: string) {
     return api.get(`/transactions/sales-orders/${id}`);
   },
-  create(data: { customerId: string; orderDate?: string; deliveryDate?: string; note?: string; items: { productId: string; quantity: number; unitPrice?: number }[] }) {
+  create(data: { customerId: string; orderDate?: string; expectedDeliveryDate?: string; note?: string; items: { productId: string; quantity: number; unitPrice?: number }[] }) {
     return api.post('/transactions/sales-orders', data);
   },
-  update(id: string, data: { customerId?: string; deliveryDate?: string; note?: string; items?: { productId: string; quantity: number; unitPrice?: number }[] }) {
+  update(id: string, data: { customerId?: string; expectedDeliveryDate?: string; note?: string; items?: { productId: string; quantity: number; unitPrice?: number }[] }) {
     return api.put(`/transactions/sales-orders/${id}`, data);
   },
   submit(id: string) {
     return api.post(`/transactions/sales-orders/${id}/submit`);
+  },
+  processLogistics(salesOrderId: string, newStatus: string, note?: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/process-logistics`, { newStatus, note });
+  },
+  reportWarehouseIssue(salesOrderId: string, issueNote: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/report-issue`, { issueNote });
+  },
+  exportOrder(salesOrderId: string, warehouseId: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/export`, { warehouseId });
+  },
+  confirmDelivery(salesOrderId: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/confirm-delivery`);
+  },
+  returnInventory(salesOrderId: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/return-inventory`);
   },
   cancel(id: string) {
     return api.post(`/transactions/sales-orders/${id}/cancel`);
@@ -201,8 +219,11 @@ export const logisticsService = {
   forwardToWarehouse(salesOrderId: string, note?: string) {
     return api.post('/transactions/logistics/forward', { salesOrderId, note });
   },
-  rejectOrder(salesOrderId: string, note: string) {
-    return api.post('/transactions/logistics/reject', { salesOrderId, note });
+  rejectOrder(salesOrderId: string, reason: string) {
+    return api.post('/transactions/logistics/reject', { salesOrderId, reason });
+  },
+  confirmDelivery(salesOrderId: string) {
+    return api.post('/transactions/logistics/confirm-delivery', { salesOrderId });
   },
 };
 
@@ -210,14 +231,17 @@ export const stockOutboundService = {
   getAll(params?: { page?: number; limit?: number; status?: string; startDate?: string; endDate?: string }) {
     return api.get('/transactions/stock-outbound', { params });
   },
+  getPendingRequests() {
+    return api.get('/transactions/stock-outbound/pending');
+  },
   getById(id: string) {
     return api.get(`/transactions/stock-outbound/${id}`);
   },
-  create(data: { salesOrderId: string; warehouseId: string; exportDate?: string; note?: string; items: { productId: string; quantity: number }[] }) {
+  create(data: { salesOrderId: string; warehouseId: string; exportDate?: string; note?: string }) {
     return api.post('/transactions/stock-outbound', data);
   },
-  confirm(id: string) {
-    return api.post(`/transactions/stock-outbound/${id}/confirm`);
+  respondOutbound(salesOrderId: string, action: 'reject' | 'delay', reason?: string, expectedDate?: string) {
+    return api.post(`/transactions/stock-outbound/${salesOrderId}/respond`, { action, reason, expectedDate });
   },
   cancel(id: string) {
     return api.post(`/transactions/stock-outbound/${id}/cancel`);

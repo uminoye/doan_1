@@ -1,4 +1,5 @@
 import { prisma } from '../models/prisma';
+import { AppError } from '../middlewares/errorHandler';
 
 export class ProductionReceiptService {
   async getAll(params?: {
@@ -51,6 +52,7 @@ export class ProductionReceiptService {
     return receipt;
   }
 
+  /** Kho tạo yêu cầu nhập hàng (PENDING) */
   async create(data: {
     warehouseId: string;
     receiptDate?: string;
@@ -58,6 +60,10 @@ export class ProductionReceiptService {
     createdById: string;
     items: { productId: string; quantity: number }[];
   }) {
+    if (!data.items || data.items.length === 0) {
+      throw new AppError(400, 'Phải có ít nhất một sản phẩm!');
+    }
+
     const count = await prisma.productionReceipt.count();
     const receiptNo = `PN${String(count + 1).padStart(6, '0')}`;
 
@@ -67,7 +73,7 @@ export class ProductionReceiptService {
         warehouseId: data.warehouseId,
         receiptDate: data.receiptDate ? new Date(data.receiptDate) : new Date(),
         note: data.note,
-        status: 'draft',
+        status: 'PENDING',
         createdById: data.createdById,
         items: {
           create: data.items.map(item => ({ productId: item.productId, quantity: item.quantity })),
@@ -83,30 +89,80 @@ export class ProductionReceiptService {
     return receipt;
   }
 
-  async confirm(id: string) {
+  /** Nhà máy phản hồi: accept (PROCESSING) hoặc reject (REJECTED) */
+  async factoryRespond(data: {
+    receiptId: string;
+    action: 'accept' | 'reject';
+    expectedDeliveryDate?: string;
+    reason?: string;
+    userName?: string;
+  }) {
+    const receipt = await prisma.productionReceipt.findUnique({ where: { id: data.receiptId } });
+    if (!receipt) throw new AppError(404, 'Không tìm thấy phiếu');
+    if (receipt.status !== 'PENDING') {
+      throw new AppError(400, `Phiếu hiện đang ở trạng thái "${receipt.status}", không thể xử lý.`);
+    }
+
+    if (data.action === 'accept' && !data.expectedDeliveryDate) {
+      throw new AppError(400, 'Vui lòng chọn ngày giao dự kiến trước khi duyệt.');
+    }
+
+    const newStatus = data.action === 'accept' ? 'PROCESSING' : 'REJECTED';
+    const finalNote = `[NM Phản hồi]: ${data.reason || 'Không có lý do'} | Cũ: ${receipt.note || ''}`;
+
+    await prisma.productionReceipt.update({
+      where: { id: data.receiptId },
+      data: {
+        status: newStatus,
+        receiptDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : receipt.receiptDate,
+        note: finalNote,
+        respondedBy: data.userName,
+        respondedReason: data.reason,
+        expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
+      },
+    });
+
+    return {
+      message: data.action === 'accept'
+        ? 'Đã duyệt phiếu và hẹn ngày giao hàng!'
+        : 'Đã từ chối yêu cầu nhập kho!',
+      data: await this.getById(data.receiptId),
+    };
+  }
+
+  /** Kho xác nhận đã nhận hàng (COMPLETED) — cộng tồn kho */
+  async confirmReceipt(receiptId: string) {
     const receipt = await prisma.productionReceipt.findUnique({
-      where: { id },
+      where: { id: receiptId },
       include: { items: true },
     });
-    if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
-    if (receipt.status !== 'draft') throw new Error('Phiếu nhập đã được xác nhận hoặc hủy');
+    if (!receipt) throw new AppError(404, 'Không tìm thấy phiếu');
+    if (receipt.status !== 'PROCESSING') {
+      throw new AppError(400, 'Nhà máy chưa giao hoặc phiếu đã chốt!');
+    }
 
     await prisma.$transaction(async (tx) => {
       for (const item of receipt.items) {
-        const current = await tx.inventoryBalance.findUnique({
+        // Cộng tồn kho
+        const bal = await tx.inventoryBalance.findUnique({
           where: { warehouseId_productId: { warehouseId: receipt.warehouseId, productId: item.productId } },
         });
-        if (current) {
+        if (bal) {
           await tx.inventoryBalance.update({
             where: { warehouseId_productId: { warehouseId: receipt.warehouseId, productId: item.productId } },
             data: { onHandQty: { increment: item.quantity } },
           });
         } else {
           await tx.inventoryBalance.create({
-            data: { warehouseId: receipt.warehouseId, productId: item.productId, onHandQty: item.quantity },
+            data: {
+              warehouseId: receipt.warehouseId,
+              productId: item.productId,
+              onHandQty: item.quantity,
+            },
           });
         }
 
+        // Ghi lịch sử
         await tx.inventoryTransaction.create({
           data: {
             warehouseId: receipt.warehouseId,
@@ -114,30 +170,32 @@ export class ProductionReceiptService {
             transactionType: 'IN',
             quantity: item.quantity,
             referenceType: 'production_receipt',
-            referenceId: receipt.id,
-            transactionDate: new Date(),
+            referenceId: receiptId,
           },
         });
       }
 
-      await tx.productionReceipt.update({ where: { id }, data: { status: 'confirmed' } });
+      await tx.productionReceipt.update({
+        where: { id: receiptId },
+        data: { status: 'COMPLETED' },
+      });
     });
 
-    return this.getById(id);
+    return { message: 'Đã nhận hàng và cộng tồn kho!', data: await this.getById(receiptId) };
   }
 
   async cancel(id: string) {
     const receipt = await prisma.productionReceipt.findUnique({ where: { id } });
     if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
-    if (receipt.status !== 'draft') throw new Error('Chỉ có thể hủy phiếu ở trạng thái nháp');
-    await prisma.productionReceipt.update({ where: { id }, data: { status: 'cancelled' } });
+    if (receipt.status !== 'PENDING') throw new AppError(400, 'Chỉ có thể hủy phiếu ở trạng thái PENDING');
+    await prisma.productionReceipt.update({ where: { id }, data: { status: 'REJECTED' } });
     return { message: 'Hủy phiếu nhập thành công' };
   }
 
   async delete(id: string) {
     const receipt = await prisma.productionReceipt.findUnique({ where: { id } });
     if (!receipt) throw new Error('Không tìm thấy phiếu nhập');
-    if (receipt.status !== 'draft') throw new Error('Chỉ có thể xóa phiếu ở trạng thái nháp');
+    if (receipt.status !== 'PENDING') throw new AppError(400, 'Chỉ có thể xóa phiếu ở trạng thái PENDING');
     await prisma.productionReceipt.delete({ where: { id } });
     return { message: 'Xóa phiếu nhập thành công' };
   }

@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, Modal, Pagination, EmptyState, Spinner } from '@/components/ui/Misc';
 import Button from '@/components/ui/Button';
-import Select from '@/components/ui/Select';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import { logisticsService } from '@/services';
-import { DeliveryRequest, PaginatedResponse, ORDER_STATUS_LABELS } from '@/types';
+import { DeliveryRequest, PaginatedResponse, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/types';
 import dayjs from 'dayjs';
 
 export default function LogisticsPage() {
@@ -14,10 +14,12 @@ export default function LogisticsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
-  const [showModal, setShowModal] = useState(false);
   const [detailItem, setDetailItem] = useState<DeliveryRequest | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [form, setForm] = useState({ salesOrderId: '', note: '' });
+  const [actionNote, setActionNote] = useState('');
+  const [showActionModal, setShowActionModal] = useState(false);
+  const [actionType, setActionType] = useState<'forward' | 'reject' | 'confirmDelivery'>('forward');
+  const [actionTarget, setActionTarget] = useState<string>('');
   const [error, setError] = useState('');
 
   const fetchData = useCallback(async () => {
@@ -31,59 +33,54 @@ export default function LogisticsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleReceive = async () => {
-    if (!form.salesOrderId) { setError('Vui lòng nhập ID đơn hàng'); return; }
-    setActionLoading('receive');
+  const openAction = (type: 'forward' | 'reject' | 'confirmDelivery', orderId: string, note = '') => {
+    setActionType(type);
+    setActionTarget(orderId);
+    setActionNote(note);
+    setError('');
+    setShowActionModal(true);
+  };
+
+  const handleAction = async () => {
+    setActionLoading(actionType + '_' + actionTarget);
+    setError('');
     try {
-      await logisticsService.receiveOrder(form.salesOrderId, form.note || undefined);
-      setShowModal(false);
-      setForm({ salesOrderId: '', note: '' });
-      setError('');
+      if (actionType === 'forward') {
+        await logisticsService.forwardToWarehouse(actionTarget, actionNote || undefined);
+      } else if (actionType === 'reject') {
+        if (!actionNote) { setError('Vui lòng nhập lý do từ chối'); setActionLoading(null); return; }
+        await logisticsService.rejectOrder(actionTarget, actionNote);
+      } else if (actionType === 'confirmDelivery') {
+        await logisticsService.confirmDelivery(actionTarget);
+      }
+      setShowActionModal(false);
       fetchData();
-    } catch (e: any) { setError(e.response?.data?.error || 'Lỗi tiếp nhận'); }
+    } catch (e: any) { setError(e.response?.data?.error || 'Lỗi thao tác'); }
     finally { setActionLoading(null); }
   };
 
-  const handleForward = async (salesOrderId: string) => {
-    if (!confirm('Chuyển đơn hàng đến kho?')) return;
-    setActionLoading(salesOrderId + '_forward');
-    try {
-      await logisticsService.forwardToWarehouse(salesOrderId);
-      fetchData();
-    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
-    finally { setActionLoading(null); }
+  const getActionTitle = () => {
+    if (actionType === 'forward') return 'Chuyển đơn xuống Kho';
+    if (actionType === 'reject') return 'Từ chối đơn hàng';
+    return 'Xác nhận giao hàng thành công';
   };
-
-  const handleReject = async (salesOrderId: string) => {
-    const note = prompt('Lý do từ chối:');
-    if (!note) return;
-    setActionLoading(salesOrderId + '_reject');
-    try {
-      await logisticsService.rejectOrder(salesOrderId, note);
-      fetchData();
-    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
-    finally { setActionLoading(null); }
-  };
-
-  const openDetail = (d: DeliveryRequest) => setDetailItem(d);
 
   const statusOptions = [
     { value: '', label: 'Tất cả' },
     { value: 'pending', label: 'Chờ tiếp nhận' },
-    { value: 'received', label: 'Đã tiếp nhận' },
-    { value: 'forwarded', label: 'Đã chuyển kho' },
-    { value: 'cancelled', label: 'Đã hủy' },
+    { value: 'warehouse_processing', label: 'Kho đang xử lý' },
+    { value: 'shipping', label: 'Đang giao' },
+    { value: 'completed', label: 'Hoàn thành' },
+    { value: 'returned', label: 'Hoàn trả' },
+    { value: 'canceled', label: 'Đã hủy' },
   ];
 
   return (
     <AppLayout>
       <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Xử lý Logistics</h1>
-            <p className="text-sm text-gray-500 mt-1">Tiếp nhận và kiểm tra đơn hàng từ Sales</p>
-          </div>
-          <Button onClick={() => { setError(''); setForm({ salesOrderId: '', note: '' }); setShowModal(true); }}>Tiếp nhận đơn</Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Tiếp nhận & Giao hàng</h1>
+          <p className="text-sm text-gray-500 mt-1">Logistics: Duyệt đơn → Chuyển kho → Xác nhận giao hàng</p>
         </div>
 
         <Card className="p-0">
@@ -97,9 +94,10 @@ export default function LogisticsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Mã đơn</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Khách hàng</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Đơn hàng</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Ngày giao</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Trạng thái logistics</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Ngày đặt</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Ngày giao dự kiến</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Sản phẩm</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Trạng thái</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Thao tác</th>
                   </tr>
                 </thead>
@@ -110,24 +108,25 @@ export default function LogisticsPage() {
                       <tr key={d.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 font-mono font-medium text-blue-600">{order?.orderNo}</td>
                         <td className="px-4 py-3 font-medium text-gray-800">{order?.customer?.name}</td>
-                        <td className="px-4 py-3 text-gray-600">{order?.items.length} sản phẩm</td>
-                        <td className="px-4 py-3">{order?.deliveryDate ? dayjs(order.deliveryDate).format('DD/MM/YYYY') : '-'}</td>
+                        <td className="px-4 py-3">{order ? dayjs(order.orderDate).format('DD/MM/YYYY') : '-'}</td>
+                        <td className="px-4 py-3">{order?.expectedDeliveryDate ? dayjs(order.expectedDeliveryDate).format('DD/MM/YYYY') : '-'}</td>
+                        <td className="px-4 py-3 text-center">{order?.items.length || 0}</td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`status-${d.status} px-2 py-0.5 rounded text-xs`}>
-                            {d.status === 'pending' ? 'Chờ tiếp nhận' : d.status === 'received' ? 'Đã tiếp nhận' : d.status === 'forwarded' ? 'Đã chuyển kho' : 'Đã hủy'}
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${ORDER_STATUS_COLORS[order?.status || ''] || 'bg-gray-100 text-gray-600'}`}>
+                            {ORDER_STATUS_LABELS[order?.status || ''] || order?.status}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openDetail(d)}>Chi tiết</Button>
-                            {order?.status === 'submitted' && d.status === 'pending' && (
+                          <div className="flex items-center justify-center gap-1 flex-wrap">
+                            <Button variant="ghost" size="sm" onClick={() => setDetailItem(d)}>Chi tiết</Button>
+                            {order?.status === 'pending' && (
                               <>
-                                <Button variant="primary" size="sm" onClick={handleReceive} loading={actionLoading === 'receive'}>Tiếp nhận</Button>
-                                <Button variant="ghost" size="sm" onClick={() => handleReject(order.id)} className="text-red-500 hover:bg-red-50">Từ chối</Button>
+                                <Button variant="primary" size="sm" onClick={() => openAction('forward', order.id, d.note || '')} loading={actionLoading === 'forward_' + order.id}>Duyệt &rarr; Kho</Button>
+                                <Button variant="ghost" size="sm" onClick={() => openAction('reject', order.id)} className="text-red-500 hover:bg-red-50">Từ chối</Button>
                               </>
                             )}
-                            {order?.status === 'logistics_received' && d.status === 'received' && (
-                              <Button variant="success" size="sm" onClick={() => handleForward(order.id)} loading={actionLoading === order.id + '_forward'}>Chuyển kho</Button>
+                            {order?.status === 'shipping' && (
+                              <Button variant="success" size="sm" onClick={() => openAction('confirmDelivery', order.id)} loading={actionLoading === 'confirmDelivery_' + order.id}>Đã giao</Button>
                             )}
                           </div>
                         </td>
@@ -142,15 +141,35 @@ export default function LogisticsPage() {
         </Card>
       </div>
 
-      {/* Receive Modal */}
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Tiếp nhận đơn hàng" size="md">
+      {/* Action Modal */}
+      <Modal open={showActionModal} onClose={() => setShowActionModal(false)} title={getActionTitle()} size="md">
         <div className="space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
-          <Input label="ID đơn hàng (Sales Order ID)" value={form.salesOrderId} onChange={e => setForm({ ...form, salesOrderId: e.target.value })} placeholder="Dán ID đơn hàng hoặc mã đơn (ví dụ: DH-2024-001) từ danh sách đơn" />
-          <Input label="Ghi chú" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Ghi chú kiểm tra (tùy chọn)" />
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => setShowModal(false)}>Hủy</Button>
-            <Button onClick={handleReceive} loading={actionLoading === 'receive'}>Tiếp nhận</Button>
+          <div className="bg-gray-50 p-3 rounded-lg border text-sm">
+            <p><span className="text-gray-500">Mã đơn:</span> <span className="font-mono font-semibold ml-1">{actionTarget}</span></p>
+          </div>
+          {actionType !== 'confirmDelivery' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {actionType === 'reject' ? 'Lý do từ chối' : 'Ghi chú'} {actionType === 'reject' && <span className="text-red-500">*</span>}
+              </label>
+              <textarea
+                value={actionNote}
+                onChange={e => setActionNote(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder={actionType === 'reject' ? 'Nhập lý do từ chối...' : 'Ghi chú (tùy chọn)...'}
+              />
+            </div>
+          )}
+          {actionType === 'confirmDelivery' && (
+            <p className="text-sm text-gray-600">Xác nhận đơn hàng đã giao thành công cho khách?</p>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowActionModal(false)}>Hủy</Button>
+            <Button onClick={handleAction} loading={!!actionLoading}>
+              {actionType === 'forward' ? 'Duyệt &amp; Chuyển Kho' : actionType === 'reject' ? 'Từ chối' : 'Xác nhận giao thành công'}
+            </Button>
           </div>
         </div>
       </Modal>
@@ -159,15 +178,15 @@ export default function LogisticsPage() {
       <Modal open={!!detailItem} onClose={() => setDetailItem(null)} title="Chi tiết yêu cầu giao hàng" size="lg">
         {detailItem && detailItem.salesOrder && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-3 gap-4 text-sm">
               <div><span className="text-gray-500">Mã đơn:</span> <span className="font-mono font-semibold text-blue-600 ml-1">{detailItem.salesOrder.orderNo}</span></div>
               <div><span className="text-gray-500">Khách hàng:</span> <span className="ml-1">{detailItem.salesOrder.customer?.name}</span></div>
-              <div><span className="text-gray-500">Địa chỉ giao:</span> <span className="ml-1">{detailItem.salesOrder.customer?.address || '-'}</span></div>
-              <div><span className="text-gray-500">Người liên hệ:</span> <span className="ml-1">{detailItem.salesOrder.customer?.contactPerson || '-'}</span></div>
-              <div><span className="text-gray-500">Ngày giao:</span> <span className="ml-1">{detailItem.salesOrder.deliveryDate ? dayjs(detailItem.salesOrder.deliveryDate).format('DD/MM/YYYY') : '-'}</span></div>
-              <div><span className="text-gray-500">Trạng thái đơn:</span> <span className={`status-${detailItem.salesOrder.status} px-2 py-0.5 rounded text-xs ml-1`}>{ORDER_STATUS_LABELS[detailItem.salesOrder.status]}</span></div>
+              <div><span className="text-gray-500">SĐT:</span> <span className="ml-1">{detailItem.salesOrder.customer?.phone || '-'}</span></div>
+              <div><span className="text-gray-500">Địa chỉ:</span> <span className="ml-1">{detailItem.salesOrder.customer?.address || '-'}</span></div>
+              <div><span className="text-gray-500">Ngày giao dự kiến:</span> <span className="ml-1">{detailItem.salesOrder.expectedDeliveryDate ? dayjs(detailItem.salesOrder.expectedDeliveryDate).format('DD/MM/YYYY') : '-'}</span></div>
+              <div><span className="text-gray-500">Trạng thái:</span> <span className={`px-2 py-0.5 rounded text-xs ml-1 ${ORDER_STATUS_COLORS[detailItem.salesOrder.status]}`}>{ORDER_STATUS_LABELS[detailItem.salesOrder.status]}</span></div>
             </div>
-            {detailItem.salesOrder.note && <div className="text-sm"><span className="text-gray-500">Ghi chú:</span> <span className="ml-1">{detailItem.salesOrder.note}</span></div>}
+            {detailItem.note && <div className="text-sm bg-yellow-50 p-3 rounded-lg border border-yellow-200"><span className="text-gray-500">Ghi chú:</span> <span className="ml-1">{detailItem.note}</span></div>}
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">

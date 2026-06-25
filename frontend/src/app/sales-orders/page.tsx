@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Card, Modal, Pagination, EmptyState, Spinner, Badge } from '@/components/ui/Misc';
+import { Card, Modal, Pagination, EmptyState, Spinner } from '@/components/ui/Misc';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { salesOrderService, customerService, productService } from '@/services';
-import { SalesOrder, Customer, Product, PaginatedResponse, ORDER_STATUS_LABELS } from '@/types';
+import { SalesOrder, Customer, Product, PaginatedResponse, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/types';
 import dayjs from 'dayjs';
 
 interface OrderItem { productId: string; quantity: number; unitPrice: number; product?: Product; }
@@ -22,7 +22,7 @@ export default function SalesOrdersPage() {
   const [detailItem, setDetailItem] = useState<SalesOrder | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [form, setForm] = useState({ customerId: '', orderDate: dayjs().format('YYYY-MM-DD'), deliveryDate: '', note: '' });
+  const [form, setForm] = useState({ customerId: '', orderDate: dayjs().format('YYYY-MM-DD'), expectedDeliveryDate: '', note: '' });
   const [items, setItems] = useState<OrderItem[]>([{ productId: '', quantity: 1, unitPrice: 0 }]);
   const [error, setError] = useState('');
 
@@ -44,7 +44,14 @@ export default function SalesOrdersPage() {
     if (cRes.data.data?.[0]) setForm(f => ({ ...f, customerId: cRes.data.data[0].id }));
   };
 
-  const openCreate = () => { loadRefs(); setForm({ customerId: '', orderDate: dayjs().format('YYYY-MM-DD'), deliveryDate: '', note: '' }); setItems([{ productId: '', quantity: 1, unitPrice: 0 }]); setError(''); setShowModal(true); };
+  const openCreate = () => {
+    loadRefs();
+    setForm({ customerId: '', orderDate: dayjs().format('YYYY-MM-DD'), expectedDeliveryDate: '', note: '' });
+    setItems([{ productId: '', quantity: 1, unitPrice: 0 }]);
+    setError('');
+    setShowModal(true);
+  };
+
   const openDetail = (o: SalesOrder) => { setDetailItem(o); };
 
   const handleSave = async () => {
@@ -56,18 +63,18 @@ export default function SalesOrdersPage() {
       await salesOrderService.create({
         customerId: form.customerId,
         orderDate: form.orderDate,
-        deliveryDate: form.deliveryDate || undefined,
+        expectedDeliveryDate: form.expectedDeliveryDate || undefined,
         note: form.note || undefined,
         items: validItems.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
       });
       setShowModal(false);
       fetchData();
-    } catch (e: any) { setError(e.response?.data?.error || 'Lỗi lưu dữ liệu'); }
+    } catch (e: any) { setError(e.response?.data?.error || e.response?.data?.message || 'Lỗi lưu dữ liệu'); }
     finally { setSaving(false); }
   };
 
   const handleSubmit = async (id: string) => {
-    if (!confirm('Gửi đơn hàng đến logistics?')) return;
+    if (!confirm('Gửi đơn hàng đến Logistics?')) return;
     setActionLoading(id);
     try { await salesOrderService.submit(id); fetchData(); }
     catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
@@ -100,11 +107,12 @@ export default function SalesOrdersPage() {
   const statusOptions = [
     { value: '', label: 'Tất cả' },
     { value: 'draft', label: 'Nháp' },
-    { value: 'submitted', label: 'Đã gửi' },
-    { value: 'logistics_received', label: 'Logistics tiếp nhận' },
+    { value: 'pending', label: 'Chờ duyệt' },
     { value: 'warehouse_processing', label: 'Kho đang xử lý' },
+    { value: 'shipping', label: 'Đang giao' },
     { value: 'completed', label: 'Hoàn thành' },
-    { value: 'cancelled', label: 'Đã hủy' },
+    { value: 'returned', label: 'Hoàn trả' },
+    { value: 'canceled', label: 'Đã hủy' },
   ];
 
   return (
@@ -112,8 +120,8 @@ export default function SalesOrdersPage() {
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Đơn hàng bán</h1>
-            <p className="text-sm text-gray-500 mt-1">Tạo và theo dõi đơn hàng xuất cho khách</p>
+            <h1 className="text-2xl font-bold text-gray-800">Quản lý Đơn hàng</h1>
+            <p className="text-sm text-gray-500 mt-1">Sales tạo đơn → Logistics duyệt → Kho xuất → Giao hàng</p>
           </div>
           <Button onClick={openCreate}>+ Tạo đơn hàng</Button>
         </div>
@@ -142,10 +150,10 @@ export default function SalesOrdersPage() {
                       <td className="px-4 py-3 font-mono font-medium text-blue-600">{o.orderNo}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{o.customer?.name}</td>
                       <td className="px-4 py-3">{dayjs(o.orderDate).format('DD/MM/YYYY')}</td>
-                      <td className="px-4 py-3">{o.deliveryDate ? dayjs(o.deliveryDate).format('DD/MM/YYYY') : '-'}</td>
+                      <td className="px-4 py-3">{o.expectedDeliveryDate ? dayjs(o.expectedDeliveryDate).format('DD/MM/YYYY') : '-'}</td>
                       <td className="px-4 py-3 text-center">{o.items.length}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`status-${o.status} px-2 py-0.5 rounded text-xs`}>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${ORDER_STATUS_COLORS[o.status] || 'bg-gray-100 text-gray-600'}`}>
                           {ORDER_STATUS_LABELS[o.status] || o.status}
                         </span>
                       </td>
@@ -177,7 +185,7 @@ export default function SalesOrdersPage() {
           <Select label="Khách hàng" value={form.customerId} onChange={e => setForm({ ...form, customerId: e.target.value })} options={customers.map(c => ({ value: c.id, label: `${c.customerCode} - ${c.name}` }))} placeholder="Chọn khách hàng" required />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Ngày đặt hàng" type="date" value={form.orderDate} onChange={e => setForm({ ...form, orderDate: e.target.value })} />
-            <Input label="Ngày giao dự kiến" type="date" value={form.deliveryDate} onChange={e => setForm({ ...form, deliveryDate: e.target.value })} />
+            <Input label="Ngày giao dự kiến" type="date" value={form.expectedDeliveryDate} onChange={e => setForm({ ...form, expectedDeliveryDate: e.target.value })} />
           </div>
           <Input label="Ghi chú" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
           <div>
@@ -236,12 +244,12 @@ export default function SalesOrdersPage() {
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div><span className="text-gray-500">Mã đơn:</span> <span className="font-mono font-semibold text-blue-600 ml-1">{detailItem.orderNo}</span></div>
               <div><span className="text-gray-500">Khách hàng:</span> <span className="ml-1">{detailItem.customer?.name}</span></div>
-              <div><span className="text-gray-500">Trạng thái:</span> <span className={`status-${detailItem.status} px-2 py-0.5 rounded text-xs ml-1`}>{ORDER_STATUS_LABELS[detailItem.status]}</span></div>
+              <div><span className="text-gray-500">Trạng thái:</span> <span className={`px-2 py-0.5 rounded text-xs ml-1 ${ORDER_STATUS_COLORS[detailItem.status]}`}>{ORDER_STATUS_LABELS[detailItem.status]}</span></div>
               <div><span className="text-gray-500">Ngày đặt:</span> <span className="ml-1">{dayjs(detailItem.orderDate).format('DD/MM/YYYY')}</span></div>
-              <div><span className="text-gray-500">Ngày giao:</span> <span className="ml-1">{detailItem.deliveryDate ? dayjs(detailItem.deliveryDate).format('DD/MM/YYYY') : '-'}</span></div>
+              <div><span className="text-gray-500">Ngày giao:</span> <span className="ml-1">{detailItem.expectedDeliveryDate ? dayjs(detailItem.expectedDeliveryDate).format('DD/MM/YYYY') : '-'}</span></div>
               <div><span className="text-gray-500">Người tạo:</span> <span className="ml-1">{detailItem.createdBy?.fullName}</span></div>
             </div>
-            {detailItem.note && <div className="text-sm"><span className="text-gray-500">Ghi chú:</span> <span className="ml-1">{detailItem.note}</span></div>}
+            {detailItem.note && <div className="text-sm bg-gray-50 p-3 rounded-lg border border-gray-200"><span className="text-gray-500">Ghi chú:</span> <span className="ml-1">{detailItem.note}</span></div>}
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
@@ -260,7 +268,7 @@ export default function SalesOrdersPage() {
                       <td className="px-4 py-2">{i.product?.name}</td>
                       <td className="px-4 py-2 text-right">{i.quantity}</td>
                       <td className="px-4 py-2 text-right">{Number(i.unitPrice).toLocaleString()} đ</td>
-                      <td className="px-4 py-2 text-right font-semibold">{Number(i.quantity * i.unitPrice).toLocaleString()} đ</td>
+                      <td className="px-4 py-2 text-right font-semibold">{Number(i.quantity * Number(i.unitPrice)).toLocaleString()} đ</td>
                     </tr>
                   ))}
                 </tbody>

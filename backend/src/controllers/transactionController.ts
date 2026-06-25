@@ -35,7 +35,14 @@ export const productionReceiptController = {
     res.status(201).json(result);
   }),
   confirm: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productionReceiptService.confirm(String(req.params.id)));
+    res.json(await productionReceiptService.confirmReceipt(String(req.params.id)));
+  }),
+  factoryRespond: asyncHandler(async (req: Request, res: Response) => {
+    const userName = (req as any).user?.fullName || (req as any).user?.email;
+    res.json(await productionReceiptService.factoryRespond({ ...req.body, userName }));
+  }),
+  confirmReceipt: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await productionReceiptService.confirmReceipt(String(req.params.id)));
   }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
     res.json(await productionReceiptService.cancel(String(req.params.id)));
@@ -74,6 +81,25 @@ export const salesOrderController = {
   submit: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.submit(String(req.params.id)));
   }),
+  processLogistics: asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.userId;
+    const { newStatus, note } = req.body;
+    res.json(await salesOrderService.processLogistics({ salesOrderId: String(req.params.id), newStatus, note, userId }));
+  }),
+  reportWarehouseIssue: asyncHandler(async (req: Request, res: Response) => {
+    const { issueNote } = req.body;
+    res.json(await salesOrderService.reportWarehouseIssue(String(req.params.id), issueNote));
+  }),
+  exportOrder: asyncHandler(async (req: Request, res: Response) => {
+    const { warehouseId } = req.body;
+    res.json(await salesOrderService.exportOrder(String(req.params.id), warehouseId));
+  }),
+  confirmDelivery: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await salesOrderService.confirmDelivery(String(req.params.id)));
+  }),
+  returnInventory: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await salesOrderService.returnInventory(String(req.params.id)));
+  }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.cancel(String(req.params.id)));
   }),
@@ -94,16 +120,23 @@ export const logisticsController = {
     res.json(result);
   }),
   receiveOrder: asyncHandler(async (req: Request, res: Response) => {
+    const userName = (req as any).user?.fullName || (req as any).user?.email;
     const { salesOrderId, note } = req.body;
-    res.json(await logisticsService.receiveOrder(salesOrderId, note));
+    res.json(await logisticsService.receiveOrder(salesOrderId, note, userName));
   }),
   forwardToWarehouse: asyncHandler(async (req: Request, res: Response) => {
+    const userName = (req as any).user?.fullName || (req as any).user?.email;
     const { salesOrderId, note } = req.body;
-    res.json(await logisticsService.forwardToWarehouse(salesOrderId, note));
+    res.json(await logisticsService.forwardToWarehouse(salesOrderId, note, userName));
   }),
   rejectOrder: asyncHandler(async (req: Request, res: Response) => {
-    const { salesOrderId, note } = req.body;
-    res.json(await logisticsService.rejectOrder(salesOrderId, note));
+    const userName = (req as any).user?.fullName || (req as any).user?.email;
+    const { salesOrderId, reason } = req.body;
+    res.json(await logisticsService.rejectOrder(salesOrderId, reason, userName));
+  }),
+  confirmDelivery: asyncHandler(async (req: Request, res: Response) => {
+    const { salesOrderId } = req.body;
+    res.json(await logisticsService.confirmDelivery(salesOrderId));
   }),
 };
 
@@ -123,13 +156,16 @@ export const stockOutboundController = {
   getById: asyncHandler(async (req: Request, res: Response) => {
     res.json(await stockOutboundService.getById(String(req.params.id)));
   }),
+  getPendingRequests: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await stockOutboundService.getPendingRequests());
+  }),
   create: asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId;
     const result = await stockOutboundService.create({ ...req.body, createdById: userId });
     res.status(201).json(result);
   }),
-  confirm: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await stockOutboundService.confirm(String(req.params.id)));
+  respondOutbound: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await stockOutboundService.respondOutbound({ ...req.body, salesOrderId: String(req.params.id) }));
   }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
     res.json(await stockOutboundService.cancel(String(req.params.id)));

@@ -108,8 +108,12 @@ model ProductionReceipt {
   warehouseId String
   receiptDate DateTime @default(now())
   note        String?
-  status      String   @default("draft") // draft, confirmed, cancelled
+  status      String   @default("PENDING") // PENDING, PROCESSING, REJECTED, COMPLETED
   createdById String
+  // Nhà máy phản hồi
+  respondedBy          String?
+  respondedReason      String?
+  expectedDeliveryDate DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -141,9 +145,10 @@ model SalesOrder {
   orderNo       String   @unique
   customerId    String
   orderDate     DateTime @default(now())
-  deliveryDate  DateTime?
+  expectedDeliveryDate DateTime?
+  actualDeliveryDate   DateTime?
   note          String?
-  status        String   @default("draft") // draft, submitted, logistics_received, warehouse_processing, completed, cancelled
+  status        String   @default("pending") // pending, warehouse_processing, shipping, completed, returned, canceled
   createdById   String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -181,7 +186,7 @@ model DeliveryRequest {
   receivedBy   String?
   receivedAt   DateTime?
   note         String?
-  status       String   @default("pending") // pending, received, forwarded, cancelled
+  status       String   @default("pending") // pending, received, forwarded, warehouse_processing, shipping, completed, returned, canceled
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -199,7 +204,9 @@ model StockOutboundNote {
   warehouseId  String
   exportDate   DateTime @default(now())
   note         String?
-  status       String   @default("draft") // draft, confirmed, cancelled
+  logisticsNote   String? // Logistics ghi chú
+  warehouseNote  String? // Kho ghi chú / từ chối / hẹn ngày
+  status       String   @default("pending") // pending, completed, rejected, delayed
   createdById  String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

@@ -91,6 +91,8 @@ export interface SalesOrder {
   customerId: string;
   customer?: Customer;
   orderDate: string;
+  expectedDeliveryDate?: string;
+  actualDeliveryDate?: string;
   deliveryDate?: string;
   note?: string;
   status: string;
@@ -100,6 +102,7 @@ export interface SalesOrder {
   delivery?: DeliveryRequest;
   outboundNote?: StockOutboundNote;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SalesOrderItem {
@@ -216,26 +219,53 @@ export interface PaginatedResponse<T> {
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {
   draft: 'Nháp',
+  pending: 'Chờ duyệt',
   submitted: 'Đã gửi',
   logistics_received: 'Logistics tiếp nhận',
   warehouse_processing: 'Kho đang xử lý',
+  shipping: 'Đang giao',
   completed: 'Hoàn thành',
-  cancelled: 'Đã hủy',
+  returned: 'Hoàn trả',
+  canceled: 'Đã hủy',
 };
 
-export const ORDER_STATUS_STEPS = ['draft', 'submitted', 'logistics_received', 'warehouse_processing', 'completed'];
+export const ORDER_STATUS_STEPS = ['pending', 'warehouse_processing', 'shipping', 'completed'];
+
+export const ORDER_STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-gray-100 text-gray-600',
+  pending: 'bg-yellow-100 text-yellow-700',
+  submitted: 'bg-blue-100 text-blue-700',
+  logistics_received: 'bg-indigo-100 text-indigo-700',
+  warehouse_processing: 'bg-orange-100 text-orange-700',
+  shipping: 'bg-purple-100 text-purple-700',
+  completed: 'bg-green-100 text-green-700',
+  returned: 'bg-red-100 text-red-700',
+  canceled: 'bg-gray-200 text-gray-500',
+};
 
 export const RECEIPT_STATUS_LABELS: Record<string, string> = {
-  draft: 'Nháp',
-  confirmed: 'Đã xác nhận',
-  cancelled: 'Đã hủy',
+  PENDING: 'Chờ NM duyệt',
+  PROCESSING: 'NM đang giao',
+  REJECTED: 'NM từ chối',
+  COMPLETED: 'Hoàn thành',
+};
+
+export const RECEIPT_STATUS_COLORS: Record<string, string> = {
+  PENDING: 'bg-yellow-100 text-yellow-700',
+  PROCESSING: 'bg-blue-100 text-blue-700',
+  REJECTED: 'bg-red-100 text-red-700',
+  COMPLETED: 'bg-green-100 text-green-700',
 };
 
 export const DELIVERY_STATUS_LABELS: Record<string, string> = {
   pending: 'Chờ tiếp nhận',
   received: 'Đã tiếp nhận',
   forwarded: 'Đã chuyển kho',
-  cancelled: 'Đã hủy',
+  warehouse_processing: 'Kho đang xử lý',
+  shipping: 'Đang giao',
+  completed: 'Hoàn thành',
+  returned: 'Hoàn trả',
+  canceled: 'Đã hủy',
 };
 
 export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
