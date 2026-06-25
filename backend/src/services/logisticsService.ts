@@ -1,4 +1,5 @@
 import { prisma } from '../models/prisma';
+import { AppError } from '../middlewares/errorHandler';
 
 export class LogisticsService {
   async getAll(params?: { page?: number; limit?: number; status?: string }) {
@@ -33,26 +34,26 @@ export class LogisticsService {
   }
 
   async receiveOrder(salesOrderId: string, note?: string) {
-    const order = await prisma.salesOrder.findUnique({
-      where: { id: salesOrderId },
+    const order = await prisma.salesOrder.findFirst({
+      where: { OR: [{ id: salesOrderId }, { orderNo: salesOrderId }] },
       include: { delivery: true },
     });
-    if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (order.status !== 'submitted') throw new Error('Đơn hàng phải ở trạng thái đã gửi (submitted)');
-    if (order.delivery) throw new Error('Đơn đã được logistics tiếp nhận');
+    if (!order) throw new AppError(404, `Không tìm thấy đơn hàng với ID hoặc mã "${salesOrderId}"`);
+    if (order.status !== 'submitted') throw new AppError(400, 'Đơn hàng phải ở trạng thái đã gửi (submitted)');
+    if (order.delivery) throw new AppError(400, 'Đơn đã được logistics tiếp nhận');
 
     await prisma.deliveryRequest.create({
       data: {
-        salesOrderId,
+        salesOrderId: order.id,
         receivedAt: new Date(),
         note,
         status: 'received',
       },
     });
 
-    await prisma.salesOrder.update({ where: { id: salesOrderId }, data: { status: 'logistics_received' } });
+    await prisma.salesOrder.update({ where: { id: order.id }, data: { status: 'logistics_received' } });
     return prisma.salesOrder.findUnique({
-      where: { id: salesOrderId },
+      where: { id: order.id },
       include: {
         customer: true,
         createdBy: { include: { role: true } },
@@ -68,8 +69,8 @@ export class LogisticsService {
       where: { id: salesOrderId },
       include: { delivery: true },
     });
-    if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (order.status !== 'logistics_received') throw new Error('Đơn phải ở trạng thái logistics đã tiếp nhận');
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'logistics_received') throw new AppError(400, 'Đơn phải ở trạng thái logistics đã tiếp nhận');
 
     if (order.delivery) {
       await prisma.deliveryRequest.update({
@@ -96,9 +97,9 @@ export class LogisticsService {
       where: { id: salesOrderId },
       include: { delivery: true },
     });
-    if (!order) throw new Error('Không tìm thấy đơn hàng');
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
     if (!['submitted', 'logistics_received'].includes(order.status)) {
-      throw new Error('Không thể từ chối đơn ở trạng thái này');
+      throw new AppError(400, 'Không thể từ chối đơn ở trạng thái này');
     }
     await prisma.salesOrder.update({ where: { id: salesOrderId }, data: { status: 'cancelled' } });
     if (order.delivery) {

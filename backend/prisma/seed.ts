@@ -110,12 +110,14 @@ async function main() {
     { customerCode: 'KH005', name: 'Công ty Viễn Thông V', phone: '0285551234', address: 'TP.HCM', contactPerson: 'Hoàng E' },
   ];
 
+  const createdCustomers: any[] = [];
   for (const cust of customers) {
-    await prisma.customer.upsert({
+    const created = await prisma.customer.upsert({
       where: { customerCode: cust.customerCode },
       update: {},
       create: cust,
     });
+    createdCustomers.push(created);
   }
   console.log('✅ Customers created');
 
@@ -129,6 +131,30 @@ async function main() {
     });
   }
   console.log('✅ Inventory balances created');
+
+  // ===== SALES ORDERS (for logistics demo) =====
+  const salesUser = await prisma.user.findFirst({ where: { email: 'sales@wms.com' } });
+  const abcCustomer = createdCustomers[0]; // Công ty TNHH ABC
+  const hanoiWh = createdWarehouses[0];
+  const sampleProducts = createdProducts.slice(0, 3);
+
+  const salesOrder = await prisma.salesOrder.create({
+    data: {
+      orderNo: 'DH-2024-001',
+      customerId: abcCustomer.id,
+      createdById: salesUser!.id,
+      status: 'submitted',
+      orderDate: new Date(),
+      items: {
+        create: sampleProducts.map((p) => ({
+          productId: p.id,
+          quantity: 10,
+          unitPrice: p.salePrice,
+        })),
+      },
+    },
+  });
+  console.log('✅ Sales orders created (ready for logistics)');
 
   console.log('\n🎉 Seed completed!');
   console.log('\n📋 Login credentials:');

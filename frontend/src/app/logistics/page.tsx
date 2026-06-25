@@ -146,7 +146,7 @@ export default function LogisticsPage() {
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Tiếp nhận đơn hàng" size="md">
         <div className="space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
-          <Input label="ID đơn hàng (Sales Order ID)" value={form.salesOrderId} onChange={e => setForm({ ...form, salesOrderId: e.target.value })} placeholder="Dán ID đơn hàng từ danh sách đơn" />
+          <Input label="ID đơn hàng (Sales Order ID)" value={form.salesOrderId} onChange={e => setForm({ ...form, salesOrderId: e.target.value })} placeholder="Dán ID đơn hàng hoặc mã đơn (ví dụ: DH-2024-001) từ danh sách đơn" />
           <Input label="Ghi chú" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Ghi chú kiểm tra (tùy chọn)" />
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" onClick={() => setShowModal(false)}>Hủy</Button>
