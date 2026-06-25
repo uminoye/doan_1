@@ -207,7 +207,7 @@ export default function ProductsPage() {
       if (productForm.stockMode === 'per_warehouse') {
         for (const [wid, qty] of Object.entries(productForm.stockDistribution)) {
           const n = parseInt(qty);
-          if (!isNaN(n) && n > 0) stockDist[wid] = n;
+          if (!isNaN(n) && n >= 0) stockDist[wid] = n;
         }
       }
 
@@ -234,7 +234,7 @@ export default function ProductsPage() {
           imageUrl: payload.imageUrl,
           salePrice: payload.salePrice,
           minStock: payload.minStock,
-        });
+        }, stockDist);
       } else {
         await productService.create(payload);
       }

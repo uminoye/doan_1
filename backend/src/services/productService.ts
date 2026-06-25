@@ -1,3 +1,4 @@
+import { prisma } from '../models/prisma';
 import { productRepo, inventoryRepo, warehouseRepo } from '../repositories';
 
 export class ProductService {
@@ -145,10 +146,27 @@ export class ProductService {
     imageUrl: string;
     salePrice: number;
     minStock: number;
-  }>) {
+  }>, stockDistribution?: Record<string, number>) {
     const product = await productRepo.findById(id);
     if (!product) throw new Error('Không tìm thấy sản phẩm');
-    return productRepo.update(id, data);
+    const updated = await productRepo.update(id, data);
+
+    if (stockDistribution) {
+      // Cập nhật tồn kho cho từng kho — xóa cũ rồi tạo mới
+      const existing = await inventoryRepo.getAllBalances({
+        where: { productId: id },
+      });
+      for (const bal of existing as any[]) {
+        await prisma.inventoryBalance.delete({
+          where: { warehouseId_productId: { warehouseId: bal.warehouseId, productId: id } },
+        });
+      }
+      for (const [warehouseId, qty] of Object.entries(stockDistribution)) {
+        await inventoryRepo.upsertBalance(warehouseId, id, qty as number);
+      }
+    }
+
+    return updated;
   }
 
   async delete(id: string) {

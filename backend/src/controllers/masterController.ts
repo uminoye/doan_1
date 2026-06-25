@@ -75,7 +75,8 @@ export const productController = {
     res.status(201).json(result);
   }),
   update: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await productService.update(String(req.params.id), req.body));
+    const { stockDistribution, ...data } = req.body as any;
+    res.json(await productService.update(String(req.params.id), data, stockDistribution));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
     res.json(await productService.delete(String(req.params.id)));
