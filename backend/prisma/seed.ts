@@ -137,8 +137,10 @@ async function main() {
   const abcCustomer = createdCustomers[0]; // Công ty TNHH ABC
   const sampleProducts = createdProducts.slice(0, 3);
 
-  const salesOrder = await prisma.salesOrder.create({
-    data: {
+  await prisma.salesOrder.upsert({
+    where: { orderNo: 'DH-2024-001' },
+    update: {},
+    create: {
       orderNo: 'DH-2024-001',
       customerId: abcCustomer.id,
       createdById: salesUser!.id,
