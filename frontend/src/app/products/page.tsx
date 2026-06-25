@@ -227,14 +227,7 @@ export default function ProductsPage() {
       }
 
       if (editProduct) {
-        await productService.update(editProduct.id, {
-          name: payload.name,
-          unit: payload.unit,
-          category: payload.category,
-          imageUrl: payload.imageUrl,
-          salePrice: payload.salePrice,
-          minStock: payload.minStock,
-        }, stockDist);
+        await productService.update(editProduct.id, payload);
       } else {
         await productService.create(payload);
       }

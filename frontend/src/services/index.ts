@@ -119,6 +119,7 @@ export const productService = {
     imageUrl: string;
     salePrice: number;
     minStock: number;
+    stockDistribution?: Record<string, number>;
   }>) {
     return api.put(`/master/products/${id}`, data);
   },
