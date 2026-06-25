@@ -13,17 +13,20 @@ const app = express();
 // Auto-apply ON DELETE CASCADE to FK constraints on startup
 async function applyCascadeConstraints() {
   const fks = [
-    { table: 'production_receipt_items', col: 'productId',      refTable: 'products',      name: 'production_receipt_items_productId_fkey' },
-    { table: 'sales_order_items',        col: 'productId',      refTable: 'products',      name: 'sales_order_items_productId_fkey' },
-    { table: 'stock_outbound_items',     col: 'productId',      refTable: 'products',      name: 'stock_outbound_items_productId_fkey' },
-    { table: 'inventory_balances',       col: 'productId',      refTable: 'products',      name: 'inventory_balances_productId_fkey' },
-    { table: 'inventory_transactions',   col: 'productId',      refTable: 'products',      name: 'inventory_transactions_productId_fkey' },
-    { table: 'sales_order_items',        col: 'salesOrderId',   refTable: 'sales_orders',  name: 'sales_order_items_salesOrderId_fkey' },
-    { table: 'delivery_requests',        col: 'salesOrderId',   refTable: 'sales_orders',  name: 'delivery_requests_salesOrderId_fkey' },
-    { table: 'stock_outbound_notes',     col: 'salesOrderId',   refTable: 'sales_orders',  name: 'stock_outbound_notes_salesOrderId_fkey' },
-    { table: 'stock_outbound_notes',     col: 'warehouseId',    refTable: 'warehouses',    name: 'stock_outbound_notes_warehouseId_fkey' },
-    { table: 'inventory_balances',       col: 'warehouseId',    refTable: 'warehouses',    name: 'inventory_balances_warehouseId_fkey' },
-    { table: 'inventory_transactions',   col: 'warehouseId',    refTable: 'warehouses',    name: 'inventory_transactions_warehouseId_fkey' },
+    // Product-related (PascalCase = Prisma default for PostgreSQL)
+    { table: 'ProductionReceiptItem',    col: 'productId',    refTable: 'Product',       name: 'ProductionReceiptItem_productId_fkey' },
+    { table: 'SalesOrderItem',           col: 'productId',    refTable: 'Product',       name: 'SalesOrderItem_productId_fkey' },
+    { table: 'StockOutboundItem',        col: 'productId',    refTable: 'Product',       name: 'StockOutboundItem_productId_fkey' },
+    { table: 'InventoryBalance',         col: 'productId',    refTable: 'Product',       name: 'InventoryBalance_productId_fkey' },
+    { table: 'InventoryTransaction',     col: 'productId',    refTable: 'Product',       name: 'InventoryTransaction_productId_fkey' },
+    // SalesOrder-related
+    { table: 'SalesOrderItem',           col: 'salesOrderId', refTable: 'SalesOrder',    name: 'SalesOrderItem_salesOrderId_fkey' },
+    { table: 'DeliveryRequest',          col: 'salesOrderId', refTable: 'SalesOrder',    name: 'DeliveryRequest_salesOrderId_fkey' },
+    { table: 'StockOutboundNote',        col: 'salesOrderId', refTable: 'SalesOrder',    name: 'StockOutboundNote_salesOrderId_fkey' },
+    // Warehouse-related
+    { table: 'StockOutboundNote',        col: 'warehouseId',  refTable: 'Warehouse',     name: 'StockOutboundNote_warehouseId_fkey' },
+    { table: 'InventoryBalance',         col: 'warehouseId',  refTable: 'Warehouse',     name: 'InventoryBalance_warehouseId_fkey' },
+    { table: 'InventoryTransaction',     col: 'warehouseId',  refTable: 'Warehouse',     name: 'InventoryTransaction_warehouseId_fkey' },
   ];
 
   for (const fk of fks) {
