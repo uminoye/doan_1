@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { customerController, warehouseController, productController } from '../controllers/masterController';
+import { customerController, warehouseController, productController, categoryController } from '../controllers/masterController';
 import { authenticate, authorize } from '../middlewares/auth';
 
 const router = Router();
@@ -29,4 +29,12 @@ router.put('/products/:id', authorize('admin'), productController.update);
 router.delete('/products/:id', authorize('admin'), productController.delete);
 router.get('/products/categories/list', productController.getCategories);
 
+// Categories
+router.get('/categories', categoryController.getAll);
+router.get('/categories/:id', categoryController.getById);
+router.post('/categories', authorize('admin'), categoryController.create);
+router.put('/categories/:id', authorize('admin'), categoryController.update);
+router.delete('/categories/:id', authorize('admin'), categoryController.delete);
+
 export default router;
+

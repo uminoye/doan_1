@@ -49,6 +49,17 @@ async function main() {
   }
   console.log('✅ Users created (password: 123456 for all)');
 
+  // ===== CATEGORIES =====
+  const catNames = ['Nội thất', 'Điện tử', 'Thực phẩm', 'Dược phẩm', 'May mặc'];
+  for (let i = 0; i < catNames.length; i++) {
+    await prisma.category.upsert({
+      where: { categoryCode: `DM${String(i + 1).padStart(3, '0')}` },
+      update: {},
+      create: { categoryCode: `DM${String(i + 1).padStart(3, '0')}`, name: catNames[i] },
+    });
+  }
+  console.log('✅ Categories created');
+
   // ===== WAREHOUSES =====
   const warehouses = [
     { warehouseCode: 'KHO001', name: 'Kho Hà Nội', location: 'Quận Bắc Từ Liêm, Hà Nội' },
@@ -69,14 +80,14 @@ async function main() {
 
   // ===== PRODUCTS =====
   const products = [
-    { sku: 'SP001', name: 'Bàn ghế văn phòng', unit: 'bộ', category: 'Nội thất', salePrice: 2500000 },
-    { sku: 'SP002', name: 'Máy tính xách tay Dell XPS', unit: 'cái', category: 'Điện tử', salePrice: 18500000 },
-    { sku: 'SP003', name: 'Máy in HP LaserJet', unit: 'cái', category: 'Điện tử', salePrice: 4500000 },
-    { sku: 'SP004', name: 'Ghế ergonomic', unit: 'cái', category: 'Nội thất', salePrice: 3200000 },
-    { sku: 'SP005', name: 'Màn hình LG 27 inch', unit: 'cái', category: 'Điện tử', salePrice: 5500000 },
-    { sku: 'SP006', name: 'Bàn làm việc', unit: 'cái', category: 'Nội thất', salePrice: 1800000 },
-    { sku: 'SP007', name: 'Điện thoại Samsung Galaxy', unit: 'cái', category: 'Điện tử', salePrice: 8900000 },
-    { sku: 'SP008', name: 'Tủ hồ sơ 3 ngăn', unit: 'cái', category: 'Nội thất', salePrice: 1200000 },
+    { sku: 'SP001', name: 'Bàn ghế văn phòng', unit: 'bộ', category: 'Nội thất', salePrice: 2500000, minStock: 10 },
+    { sku: 'SP002', name: 'Máy tính xách tay Dell XPS', unit: 'cái', category: 'Điện tử', salePrice: 18500000, minStock: 5 },
+    { sku: 'SP003', name: 'Máy in HP LaserJet', unit: 'cái', category: 'Điện tử', salePrice: 4500000, minStock: 3 },
+    { sku: 'SP004', name: 'Ghế ergonomic', unit: 'cái', category: 'Nội thất', salePrice: 3200000, minStock: 10 },
+    { sku: 'SP005', name: 'Màn hình LG 27 inch', unit: 'cái', category: 'Điện tử', salePrice: 5500000, minStock: 8 },
+    { sku: 'SP006', name: 'Bàn làm việc', unit: 'cái', category: 'Nội thất', salePrice: 1800000, minStock: 15 },
+    { sku: 'SP007', name: 'Điện thoại Samsung Galaxy', unit: 'cái', category: 'Điện tử', salePrice: 8900000, minStock: 5 },
+    { sku: 'SP008', name: 'Tủ hồ sơ 3 ngăn', unit: 'cái', category: 'Nội thất', salePrice: 1200000, minStock: 10 },
   ];
 
   const createdProducts: any[] = [];

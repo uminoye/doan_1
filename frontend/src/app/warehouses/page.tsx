@@ -33,7 +33,7 @@ export default function WarehousesPage() {
   const handleSave = async () => {
     setSaving(true); setError('');
     try {
-      const payload = { warehouseCode: form.warehouseCode, name: form.name, location: form.location || undefined };
+      const payload = { warehouseCode: form.warehouseCode || undefined, name: form.name, location: form.location || undefined };
       if (editItem) await warehouseService.update(editItem.id, payload);
       else await warehouseService.create(payload);
       setShowModal(false); fetchData();
@@ -83,7 +83,11 @@ export default function WarehousesPage() {
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Sửa kho' : 'Thêm kho'}>
         <div className="space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
-          <Input label="Mã kho" value={form.warehouseCode} onChange={e => setForm({ ...form, warehouseCode: e.target.value })} required disabled={!!editItem} />
+          {editItem ? (
+            <Input label="Mã kho" value={form.warehouseCode} disabled />
+          ) : (
+            <Input label="Mã kho" value={form.warehouseCode} onChange={e => setForm({ ...form, warehouseCode: e.target.value })} placeholder="Tự động tạo nếu để trống" helper="VD: KHO001" />
+          )}
           <Input label="Tên kho" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
           <Input label="Địa điểm" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
           <div className="flex justify-end gap-3 pt-2">

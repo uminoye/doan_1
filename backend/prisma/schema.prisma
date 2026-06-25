@@ -77,6 +77,8 @@ model Product {
   unit      String   @default("cái")
   category  String?
   salePrice Decimal  @default(0)
+  imageUrl  String?
+  minStock  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -86,6 +88,16 @@ model Product {
   stockOutboundItems     StockOutboundItem[]
   inventoryBalances      InventoryBalance[]
   inventoryTransactions  InventoryTransaction[]
+}
+
+// ============== CATEGORY ==============
+
+model Category {
+  id           String   @id @default(uuid())
+  categoryCode String   @unique
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ============== PRODUCTION RECEIPT (NHAP KHO) ==============

@@ -87,16 +87,39 @@ export const warehouseService = {
 };
 
 export const productService = {
-  getAll(params?: { page?: number; limit?: number; search?: string; category?: string }) {
+  getAll(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    warehouseId?: string;
+    stockStatus?: 'all' | 'low' | 'out';
+  }) {
     return api.get('/master/products', { params });
   },
   getById(id: string) {
     return api.get(`/master/products/${id}`);
   },
-  create(data: { sku: string; name: string; unit?: string; category?: string; salePrice?: number }) {
+  create(data: {
+    sku?: string;
+    name: string;
+    unit?: string;
+    category?: string;
+    imageUrl?: string;
+    salePrice?: number;
+    minStock?: number;
+    stockDistribution?: Record<string, number>;
+  }) {
     return api.post('/master/products', data);
   },
-  update(id: string, data: Partial<{ name: string; unit: string; category: string; salePrice: number }>) {
+  update(id: string, data: Partial<{
+    name: string;
+    unit: string;
+    category: string;
+    imageUrl: string;
+    salePrice: number;
+    minStock: number;
+  }>) {
     return api.put(`/master/products/${id}`, data);
   },
   delete(id: string) {
@@ -104,6 +127,21 @@ export const productService = {
   },
   getCategories() {
     return api.get('/master/products/categories/list');
+  },
+};
+
+export const categoryService = {
+  getAll() {
+    return api.get('/master/categories');
+  },
+  create(data: { categoryCode?: string; name: string }) {
+    return api.post('/master/categories', data);
+  },
+  update(id: string, data: { name: string }) {
+    return api.put(`/master/categories/${id}`, data);
+  },
+  delete(id: string) {
+    return api.delete(`/master/categories/${id}`);
   },
 };
 

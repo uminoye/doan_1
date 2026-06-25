@@ -37,6 +37,29 @@ export interface Product {
   unit: string;
   category?: string;
   salePrice: number;
+  imageUrl?: string;
+  minStock: number;
+  createdAt: string;
+  // Enriched fields (from API)
+  stockByWarehouse?: Record<string, {
+    warehouseId: string;
+    warehouseName: string;
+    warehouseCode: string;
+    onHandQty: number;
+    reservedQty: number;
+    availableQty: number;
+  }>;
+  totalOnHand?: number;
+  totalReserved?: number;
+  totalAvailable?: number;
+  isLowStock?: boolean;
+  isOutOfStock?: boolean;
+}
+
+export interface Category {
+  id: string;
+  categoryCode: string;
+  name: string;
   createdAt: string;
 }
 

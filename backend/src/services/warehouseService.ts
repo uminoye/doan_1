@@ -11,10 +11,15 @@ export class WarehouseService {
     return warehouse;
   }
 
-  async create(data: { warehouseCode: string; name: string; location?: string }) {
-    const existing = await warehouseRepo.findByCode(data.warehouseCode);
+  async create(data: { warehouseCode?: string; name: string; location?: string }) {
+    let code = data.warehouseCode;
+    if (!code) {
+      const all = await warehouseRepo.findAll();
+      code = `KHO${String(all.length + 1).padStart(3, '0')}`;
+    }
+    const existing = await warehouseRepo.findByCode(code);
     if (existing) throw new Error('Mã kho đã tồn tại');
-    return warehouseRepo.create(data);
+    return warehouseRepo.create({ warehouseCode: code, name: data.name, location: data.location || '' });
   }
 
   async update(id: string, data: Partial<{ name: string; location: string }>) {
