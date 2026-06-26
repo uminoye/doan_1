@@ -17,6 +17,13 @@ export class SalesOrderService {
     const where: any = {};
     if (status) where.status = status;
     if (customerId) where.customerId = customerId;
+    if (search) {
+      where.OR = [
+        { orderNo: { contains: search, mode: 'insensitive' } },
+        { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { note: { contains: search, mode: 'insensitive' } },
+      ];
+    }
     if (startDate || endDate) {
       where.orderDate = {};
       if (startDate) where.orderDate.gte = new Date(startDate);
@@ -143,8 +150,8 @@ export class SalesOrderService {
 
   async delete(id: string) {
     const order = await prisma.salesOrder.findUnique({ where: { id } });
-    if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (order.status !== 'draft') throw new Error('Chỉ có thể xóa đơn ở trạng thái nháp');
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'draft') throw new AppError(400, 'Chỉ có thể xóa đơn ở trạng thái nháp');
     await prisma.salesOrder.delete({ where: { id } });
     return { message: 'Xóa đơn hàng thành công' };
   }
