@@ -78,9 +78,6 @@ export const salesOrderController = {
   update: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.update(String(req.params.id), req.body));
   }),
-  submit: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.submit(String(req.params.id)));
-  }),
   processLogistics: asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId;
     const { newStatus, note } = req.body;
@@ -99,9 +96,6 @@ export const salesOrderController = {
   }),
   returnInventory: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.returnInventory(String(req.params.id)));
-  }),
-  cancel: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await salesOrderService.cancel(String(req.params.id)));
   }),
   delete: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.delete(String(req.params.id)));
