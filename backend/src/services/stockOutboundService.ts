@@ -110,7 +110,7 @@ export class StockOutboundService {
           warehouseId: data.warehouseId,
           exportDate: data.exportDate ? new Date(data.exportDate) : new Date(),
           note: data.note,
-          status: 'pending',
+          status: 'completed',
           createdById: data.createdById,
         },
       });
@@ -158,7 +158,7 @@ export class StockOutboundService {
     reason?: string;
     expectedDate?: string;
   }) {
-    const newStatus = data.action === 'reject' ? 'returned' : 'pending';
+    const newStatus = data.action === 'reject' ? 'returned' : 'delayed';
     const notePrefix = data.action === 'reject' ? '[KHO TỪ CHỐI]' : '[KHO HẸN GIAO]';
     const finalNote = `${notePrefix}: ${data.reason || 'Không có lý do'}`;
 

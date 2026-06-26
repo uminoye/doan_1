@@ -73,6 +73,10 @@ export class SalesOrderService {
     createdById: string;
     items: { productId: string; quantity: number; unitPrice?: number }[];
   }) {
+    if (!data.items || data.items.length === 0) {
+      throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');
+    }
+
     const count = await prisma.salesOrder.count();
     const orderNo = `SO${String(count + 1).padStart(6, '0')}`;
 
@@ -83,7 +87,7 @@ export class SalesOrderService {
         orderDate: data.orderDate ? new Date(data.orderDate) : new Date(),
         expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
         note: data.note,
-        status: 'draft',
+        status: 'pending',
         createdById: data.createdById,
         items: {
           create: data.items.map(item => ({
@@ -106,7 +110,12 @@ export class SalesOrderService {
   }) {
     const order = await prisma.salesOrder.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (order.status !== 'draft') throw new Error('Chỉ có thể sửa đơn ở trạng thái nháp');
+    if (!['pending', 'logistics_rejected'].includes(order.status)) {
+      throw new Error('Chỉ có thể sửa đơn ở trạng thái chờ duyệt hoặc bị từ chối');
+    }
+    if (!data.items || data.items.length === 0) {
+      throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');
+    }
 
     if (data.items) {
       await prisma.salesOrder.update({
@@ -115,6 +124,7 @@ export class SalesOrderService {
           customerId: data.customerId,
           expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : undefined,
           note: data.note,
+          status: 'pending',
           items: {
             deleteMany: {},
             create: data.items.map(item => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice || 0 })),
@@ -124,36 +134,29 @@ export class SalesOrderService {
     } else {
       await prisma.salesOrder.update({
         where: { id },
-        data: { customerId: data.customerId, expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : undefined, note: data.note },
+        data: {
+          customerId: data.customerId,
+          expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : undefined,
+          note: data.note,
+          status: 'pending',
+        },
       });
     }
 
     return this.getById(id);
   }
 
-  async submit(id: string) {
-    const order = await prisma.salesOrder.findUnique({ where: { id }, include: { items: true } });
-    if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (order.status !== 'draft') throw new Error('Chỉ có thể gửi đơn ở trạng thái nháp');
-    if (!order.items.length) throw new Error('Đơn hàng phải có ít nhất một sản phẩm');
-    await prisma.salesOrder.update({ where: { id }, data: { status: 'pending' } });
-    return this.getById(id);
-  }
-
-  async cancel(id: string) {
-    const order = await prisma.salesOrder.findUnique({ where: { id } });
-    if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (['completed', 'cancelled'].includes(order.status)) throw new Error('Không thể hủy đơn ở trạng thái này');
-    await prisma.salesOrder.update({ where: { id }, data: { status: 'cancelled' } });
-    return { message: 'Hủy đơn hàng thành công' };
-  }
-
   async delete(id: string) {
     const order = await prisma.salesOrder.findUnique({ where: { id } });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
-    if (order.status !== 'draft') throw new AppError(400, 'Chỉ có thể xóa đơn ở trạng thái nháp');
+    if (!['pending', 'logistics_rejected', 'draft'].includes(order.status)) {
+      throw new AppError(400, 'Chỉ có thể xóa đơn ở trạng thái nháp, chờ duyệt hoặc bị từ chối');
+    }
+
+    const oldOrderNo = order.orderNo;
     await prisma.salesOrder.delete({ where: { id } });
-    return { message: 'Xóa đơn hàng thành công' };
+
+    return { message: `Đã xóa đơn ${oldOrderNo}. Có thể tạo đơn mới ngay.`, deletedOrderNo: oldOrderNo };
   }
 
   // ===== NGHIỆP VỤ MỚI (theo bài mẫu) =====
@@ -170,7 +173,7 @@ export class SalesOrderService {
       include: { delivery: true },
     });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
-    if (order.status !== 'pending' && order.status !== 'submitted') {
+    if (order.status !== 'pending' && order.status !== 'logistics_review' && order.status !== 'submitted') {
       throw new AppError(400, `Không thể xử lý đơn ở trạng thái "${order.status}"`);
     }
 
@@ -209,7 +212,7 @@ export class SalesOrderService {
     });
   }
 
-  /** Kho báo lỗi (thiếu hàng, hẹn ngày...) → gửi về logistics */
+  /** Kho báo lỗi (thiếu hàng, hẹn ngày...) → gửi về logistics để xem xét lại */
   async reportWarehouseIssue(salesOrderId: string, issueNote: string) {
     const order = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
@@ -219,84 +222,34 @@ export class SalesOrderService {
 
     await prisma.salesOrder.update({
       where: { id: salesOrderId },
-      data: { status: 'pending', note: newNote }, // quay về logistics xử lý
+      data: { status: 'logistics_review', note: newNote },
     });
 
-    // Cập nhật delivery request
     await prisma.deliveryRequest.updateMany({
       where: { salesOrderId },
-      data: { status: 'pending', note: `[KHO BÁO LỖI]: ${issueNote}` },
+      data: { status: 'logistics_review', note: `[KHO BÁO LỖI]: ${issueNote}` },
     });
 
-    return { message: 'Đã báo lỗi và gửi về Logistics!' };
+    return { message: 'Đã báo lỗi và gửi về Logistics xem xét!' };
   }
 
-  /** Xác nhận xuất kho (Kho bấm xuất → shipping) */
+  /** Xác nhận xuất kho (Kho bấm xuất → shipping) — chỉ cập nhật trạng thái, phiếu xuất đã được tạo bởi StockOutboundService.create() */
   async exportOrder(salesOrderId: string, warehouseId: string) {
     const order = await prisma.salesOrder.findUnique({
       where: { id: salesOrderId },
-      include: { items: true, outboundNote: true },
+      include: { outboundNote: true },
     });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
     if (order.status !== 'warehouse_processing') {
       throw new AppError(400, 'Đơn phải ở trạng thái kho đang xử lý');
     }
-    if (!order.outboundNote) throw new AppError(400, 'Chưa tạo phiếu xuất kho cho đơn này');
-
-    // Tạo stock outbound note + trừ tồn trong transaction
-    const count = await prisma.stockOutboundNote.count();
-    const noteNo = `PX${String(count + 1).padStart(6, '0')}`;
 
     await prisma.$transaction(async (tx) => {
-      // Tạo phiếu xuất
-      const note = await tx.stockOutboundNote.create({
-        data: {
-          noteNo,
-          salesOrderId,
-          warehouseId,
-          exportDate: new Date(),
-          status: 'pending',
-          createdById: order.createdById,
-        },
-      });
-
-      // Tạo chi tiết phiếu xuất từ items của đơn
-      for (const item of order.items) {
-        await tx.stockOutboundItem.create({
-          data: { outboundNoteId: note.id, productId: item.productId, quantity: item.quantity },
-        });
-
-        // Trừ tồn kho
-        const bal = await tx.inventoryBalance.findUnique({
-          where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-        });
-        if (bal) {
-          await tx.inventoryBalance.update({
-            where: { warehouseId_productId: { warehouseId, productId: item.productId } },
-            data: { onHandQty: { decrement: item.quantity } },
-          });
-        }
-
-        // Ghi lịch sử
-        await tx.inventoryTransaction.create({
-          data: {
-            warehouseId,
-            productId: item.productId,
-            transactionType: 'OUT',
-            quantity: item.quantity,
-            referenceType: 'stock_outbound',
-            referenceId: note.id,
-          },
-        });
-      }
-
-      // Cập nhật trạng thái đơn → shipping
       await tx.salesOrder.update({
         where: { id: salesOrderId },
         data: { status: 'shipping' },
       });
 
-      // Cập nhật delivery request
       await tx.deliveryRequest.updateMany({
         where: { salesOrderId },
         data: { status: 'shipping' },

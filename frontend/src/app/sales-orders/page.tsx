@@ -11,21 +11,25 @@ interface OrderItem { productId: string; quantity: number; unitPrice: number; pr
 interface FormItem { id?: string; product_id: string; quantity: number; unit_price: number; product?: Product; }
 
 const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
-  pending:     { label: 'Đang chờ duyệt', tone: 'warning' },
-  returned:    { label: 'Bị từ chối', tone: 'danger' },
+  draft:             { label: 'Nháp',       tone: 'gray' },
+  pending:           { label: 'Chờ duyệt',  tone: 'warning' },
+  logistics_rejected: { label: 'Bị từ chối', tone: 'danger' },
+  logistics_review:   { label: 'LXxem xét',  tone: 'orange' },
   warehouse_processing: { label: 'Kho đang xuất', tone: 'info' },
-  shipping:    { label: 'Đang giao', tone: 'purple' },
-  completed:   { label: 'Đã hoàn tất', tone: 'success' },
-  logistics_review: { label: 'Kho báo lỗi', tone: 'purple' },
-  canceled:    { label: 'Hủy đơn', tone: 'danger' },
+  shipping:          { label: 'Đang giao',  tone: 'purple' },
+  completed:         { label: 'Hoàn thành', tone: 'success' },
+  returned:          { label: 'Hoàn trả',   tone: 'danger' },
+  canceled:          { label: 'Hủy đơn',    tone: 'gray' },
 };
 
 const TONE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
-  warning: { bg: 'bg-amber-50',  text: 'text-amber-800',  border: 'border-amber-200' },
-  danger:  { bg: 'bg-red-50',    text: 'text-red-800',    border: 'border-red-200' },
+  gray:    { bg: 'bg-gray-100',    text: 'text-gray-700',    border: 'border-gray-200' },
+  warning: { bg: 'bg-amber-50',   text: 'text-amber-800',  border: 'border-amber-200' },
+  danger:  { bg: 'bg-red-50',     text: 'text-red-800',    border: 'border-red-200' },
   info:    { bg: 'bg-blue-50',    text: 'text-blue-800',   border: 'border-blue-200' },
   success: { bg: 'bg-green-50',   text: 'text-green-800',  border: 'border-green-200' },
-  purple:  { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
+  purple:  { bg: 'bg-purple-50',  text: 'text-purple-800', border: 'border-purple-200' },
+  orange:  { bg: 'bg-orange-50',  text: 'text-orange-800', border: 'border-orange-200' },
 };
 
 const VND = new Intl.NumberFormat('vi-VN').format;
@@ -117,8 +121,9 @@ export default function SalesOrdersPage() {
   const stats = {
     total: orders.length,
     pending: orders.filter(o => o.status === 'pending').length,
+    logisticsRejected: orders.filter(o => o.status === 'logistics_rejected').length,
     completed: orders.filter(o => o.status === 'completed').length,
-    issues: orders.filter(o => ['returned', 'logistics_review'].includes(o.status)).length,
+    issues: orders.filter(o => ['logistics_review', 'returned', 'canceled'].includes(o.status)).length,
   };
 
   const openCreate = () => {
@@ -133,8 +138,8 @@ export default function SalesOrdersPage() {
   };
 
   const openEdit = async (o: SalesOrder) => {
-    if (['warehouse_processing', 'shipping', 'completed', 'canceled'].includes(o.status)) {
-      alert('Đơn đang trong trạng thái này nên không thể chỉnh sửa.'); return;
+    if (!['pending', 'logistics_rejected'].includes(o.status)) {
+      alert('Chỉ có thể chỉnh sửa đơn đang chờ duyệt hoặc bị từ chối.'); return;
     }
     setEditingId(o.id);
     setOrderNo(o.orderNo);
@@ -184,7 +189,7 @@ export default function SalesOrdersPage() {
           note: note || undefined,
           items: validItems.map(i => ({ productId: i.product_id, quantity: i.quantity, unitPrice: i.unit_price })),
         });
-        alert('Cập nhật thành công!');
+        alert('Đã sửa đơn & tự động gửi lại cho Logistics!');
       } else {
         await salesOrderService.create({
           customerId,
@@ -192,7 +197,7 @@ export default function SalesOrdersPage() {
           note: note || undefined,
           items: validItems.map(i => ({ productId: i.product_id, quantity: i.quantity, unitPrice: i.unit_price })),
         });
-        alert('Tạo đơn hàng thành công!');
+        alert('Tạo đơn hàng thành công! Đơn đã được gửi cho Logistics.');
       }
       closeCreate();
       fetchData();
@@ -202,10 +207,10 @@ export default function SalesOrdersPage() {
   };
 
   const handleDelete = async (o: SalesOrder) => {
-    if (['warehouse_processing', 'shipping', 'completed', 'canceled'].includes(o.status)) {
-      alert('Đơn đang ở trạng thái này nên không thể xóa.'); return;
+    if (['warehouse_processing', 'shipping', 'completed', 'canceled', 'returned'].includes(o.status)) {
+      alert('Đơn đang trong trạng thái này nên không thể xóa.'); return;
     }
-    if (!confirm('Xác nhận xóa vĩnh viễn đơn hàng này?')) return;
+    if (!confirm(`Xác nhận xóa vĩnh viễn đơn hàng ${o.orderNo}? Hành động này không thể hoàn tác.`)) return;
     setActionLoading(o.id);
     try {
       await salesOrderService.delete(o.id);
@@ -319,13 +324,13 @@ export default function SalesOrdersPage() {
                   className="px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
                 >
                   <option value="all">Tất cả trạng thái</option>
-                  <option value="pending">Đang chờ duyệt</option>
-                  <option value="returned">Bị từ chối</option>
-                  <option value="warehouse_processing">Kho đang xuất</option>
+                  <option value="pending">Chờ duyệt</option>
+                  <option value="logistics_rejected">Bị từ chối</option>
+                  <option value="warehouse_processing">Kho đang xử lý</option>
                   <option value="shipping">Đang giao</option>
-                  <option value="completed">Đã hoàn tất</option>
-                  <option value="logistics_review">Kho báo lỗi</option>
-                  <option value="canceled">Hủy đơn</option>
+                  <option value="completed">Hoàn thành</option>
+                  <option value="logistics_review">Logistics xem xét lại</option>
+                  <option value="returned">Hoàn trả / Bom hàng</option>
                 </select>
                 <div className="flex items-center px-4 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-600">
                   {filtered.length} / {orders.length} đơn
@@ -357,7 +362,7 @@ export default function SalesOrdersPage() {
                   ) : filtered.length === 0 ? (
                     <tr><td colSpan={5} className="text-center py-16 text-slate-400">Chưa có đơn hàng nào</td></tr>
                   ) : filtered.map(o => {
-                    const isPending = o.status === 'pending';
+                    const isEditable = ['pending', 'logistics_rejected'].includes(o.status);
                     return (
                       <tr
                         key={o.id}
@@ -385,14 +390,14 @@ export default function SalesOrdersPage() {
                             <button onClick={() => setCancelOrder(o)} className="w-9 h-9 rounded-xl border border-red-200 bg-gradient-to-br from-pink-50 to-red-50 flex items-center justify-center text-red-600 shadow-sm">
                               <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8"/></svg>
                             </button>
-                          ) : o.status === 'returned' ? (
+                          ) : o.status === 'logistics_rejected' ? (
                             <button
                               onClick={() => { setErrorOrder(o); }}
                               className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-red-500 text-white text-xs font-extrabold shadow-md hover:shadow-lg transition-all"
                             >
-                              Xem lỗi & xử lý
+                              Sửa lỗi &amp; xử lý
                             </button>
-                          ) : isPending ? (
+                          ) : isEditable ? (
                             <div className="flex gap-2">
                               <button
                                 onClick={() => openEdit(o)}
@@ -692,10 +697,10 @@ export default function SalesOrdersPage() {
             <div className="bg-white rounded-3xl border border-red-200 w-full max-w-lg p-7 shadow-2xl"
               style={{ animation: 'scaleIn 220ms ease-out' }}>
               <div className="flex items-center gap-2 mb-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold">ĐƠN BỊ TỪ CHỐI</span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold">ĐƠN BỊ TỪ CHỐI — SAI THÔNG TIN</span>
               </div>
               <h3 className="text-xl font-black text-slate-900 mb-2">Chi tiết lỗi đơn {errorOrder.orderNo}</h3>
-              <p className="text-sm text-slate-500 mb-4">Xem lý do trả đơn và chọn cách xử lý tiếp theo.</p>
+              <p className="text-sm text-slate-500 mb-4">Đơn đã bị Logistics từ chối do sai thông tin. Sale có thể sửa lại đơn hoặc xóa vĩnh viễn.</p>
               <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-5 max-h-60 overflow-y-auto">
                 <p className="text-sm text-red-800 whitespace-pre-wrap font-medium">{errorOrder.note || 'Không có ghi chú lỗi.'}</p>
               </div>

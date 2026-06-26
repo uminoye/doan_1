@@ -7,12 +7,13 @@ import { SalesOrder, PaginatedResponse, ORDER_STATUS_LABELS } from '@/types';
 import dayjs from 'dayjs';
 
 const STATUS_CONFIG: Record<string, { label: string; tone: string; description: string }> = {
-  pending:            { label: 'Chờ điều phối',     tone: 'amber', description: 'Đơn mới từ Sales, sẵn sàng phân tuyến.' },
-  warehouse_processing: { label: 'Kho đang xử lý',  tone: 'blue',  description: 'Đã điều phối, chờ kho soạn hàng và xuất tuyến.' },
-  shipping:           { label: 'Đang giao hàng',  tone: 'purple', description: 'Hàng đã rời kho, đang trên đường đến tay khách.' },
-  completed:           { label: 'Đã giao thành công', tone: 'green', description: 'Đơn đã hoàn tất giao nhận.' },
-  returned:           { label: 'Hoàn trả / Bom hàng', tone: 'red',   description: 'Đơn bị hủy hoặc hoàn trả trong quá trình giao.' },
-  canceled:           { label: 'Hủy đơn',           tone: 'red',   description: 'Đơn đã bị hủy.' },
+  pending:            { label: 'Chờ duyệt',           tone: 'amber',  description: 'Đơn mới từ Sales, sẵn sàng phân tuyến.' },
+  logistics_review:   { label: 'Logistics xem xét lại', tone: 'orange', description: 'Kho báo lỗi, logistics đang xem xét lại thông tin.' },
+  warehouse_processing: { label: 'Kho đang xử lý',  tone: 'blue',   description: 'Đã điều phối, chờ kho soạn hàng và xuất tuyến.' },
+  shipping:           { label: 'Đang giao hàng',   tone: 'purple', description: 'Hàng đã rời kho, đang trên đường đến tay khách.' },
+  completed:           { label: 'Đã giao thành công', tone: 'green',  description: 'Đơn đã hoàn tất giao nhận.' },
+  returned:           { label: 'Hoàn trả / Bom hàng', tone: 'red',    description: 'Đơn bị hủy hoặc hoàn trả trong quá trình giao.' },
+  canceled:           { label: 'Hủy đơn',           tone: 'red',    description: 'Đơn đã bị hủy.' },
 };
 
 const TONE: Record<string, { bg: string; text: string; border: string; bgBtn: string; shadow: string }> = {
@@ -21,6 +22,7 @@ const TONE: Record<string, { bg: string; text: string; border: string; bgBtn: st
   purple: { bg: 'bg-purple-50',   text: 'text-purple-800', border: 'border-purple-200', bgBtn: 'bg-gradient-to-br from-purple-600 to-pink-500', shadow: 'shadow-purple-200' },
   green:  { bg: 'bg-green-50',    text: 'text-green-800',  border: 'border-green-200',  bgBtn: 'bg-gradient-to-br from-green-600 to-emerald-500',   shadow: 'shadow-green-200' },
   red:    { bg: 'bg-red-50',      text: 'text-red-800',    border: 'border-red-200',    bgBtn: 'bg-gradient-to-br from-red-600 to-rose-500',       shadow: 'shadow-red-200' },
+  orange: { bg: 'bg-orange-50',   text: 'text-orange-800', border: 'border-orange-200', bgBtn: 'bg-gradient-to-br from-orange-600 to-amber-500', shadow: 'shadow-orange-200' },
 };
 
 const TONE_ICON: Record<string, string> = {
@@ -29,6 +31,7 @@ const TONE_ICON: Record<string, string> = {
   purple: 'bg-gradient-to-br from-purple-500 to-pink-500',
   green:  'bg-gradient-to-br from-green-500 to-emerald-500',
   red:    'bg-gradient-to-br from-red-500 to-rose-500',
+  orange: 'bg-gradient-to-br from-orange-500 to-amber-500',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -117,7 +120,7 @@ export default function LogisticsPage() {
     return () => clearTimeout(t);
   }, [activeTab]);
 
-  const pendingOrders = useMemo(() => orders.filter(o => o.status === 'pending' || o.status === 'submitted'), [orders]);
+  const pendingOrders = useMemo(() => orders.filter(o => ['pending', 'logistics_review'].includes(o.status)), [orders]);
   const trackingOrders = useMemo(() => orders.filter(o =>
     ['warehouse_processing', 'shipping', 'completed', 'returned', 'canceled'].includes(o.status)), [orders]);
 
@@ -134,7 +137,7 @@ export default function LogisticsPage() {
     total: orders.length,
     pending: pendingOrders.length,
     tracking: trackingOrders.length,
-    issues: orders.filter(o => ['returned', 'canceled'].includes(o.status)).length,
+    issues: orders.filter(o => ['logistics_review', 'returned', 'canceled'].includes(o.status)).length,
   };
 
   const handleAssign = async () => {
@@ -155,8 +158,15 @@ export default function LogisticsPage() {
     if (!rejectOrder || !rejectReason.trim()) { alert('Vui lòng nhập lý do'); return; }
     setSaving(true);
     try {
-      await logisticsService.rejectOrder(rejectOrder.id, rejectReason);
-      alert('Đã cập nhật trạng thái!');
+      if (rejectAction === 'returned') {
+        // Bom hàng — gọi returnInventory để hoàn tồn kho
+        await salesOrderService.returnInventory(rejectOrder.id);
+        alert('Đã ghi nhận bom hàng và hoàn tồn kho!');
+      } else {
+        // Từ chối — gửi về Sales
+        await logisticsService.rejectOrder(rejectOrder.id, rejectReason);
+        alert('Đã từ chối đơn hàng!');
+      }
       setRejectOrder(null); setRejectReason('');
       fetchData();
     } catch (e: any) { alert(e.response?.data?.error || 'Lỗi hệ thống'); }
@@ -194,13 +204,11 @@ export default function LogisticsPage() {
 
         {/* Quick Status Panel */}
         <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-          {(['pending', 'warehouse_processing', 'shipping', 'completed', 'canceled'] as const).map(key => {
+          {(['pending', 'logistics_review', 'warehouse_processing', 'shipping', 'completed'] as const).map(key => {
             const cfg = STATUS_CONFIG[key] || { label: key, tone: 'amber', description: '' };
             const t = TONE[cfg.tone] || TONE.amber;
             const iconBg = TONE_ICON[cfg.tone] || TONE_ICON.amber;
-            const count = key === 'canceled'
-              ? orders.filter(o => ['returned', 'canceled'].includes(o.status)).length
-              : orders.filter(o => o.status === key).length;
+            const count = orders.filter(o => o.status === key).length;
             const iconMap: Record<string, React.ReactNode> = {
               pending: <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8"/></svg>,
               warehouse_processing: <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z" stroke="currentColor" strokeWidth="1.8"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" stroke="currentColor" strokeWidth="1.8"/></svg>,
@@ -245,7 +253,7 @@ export default function LogisticsPage() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  Chờ điều phối ({pendingOrders.length})
+                  Chờ duyệt &amp; xem xét ({pendingOrders.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('tracking')}
@@ -334,7 +342,7 @@ export default function LogisticsPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 flex-wrap">
 
-                          {/* Pending tab actions */}
+                          {/* Pending tab: điều phối hoặc từ chối */}
                           {activeTab === 'pending' && (
                             <>
                               <button
@@ -344,7 +352,7 @@ export default function LogisticsPage() {
                                 } bg-gradient-to-r from-blue-600 to-blue-400 hover:brightness-105`}
                                 style={{ transition: 'transform 150ms ease, box-shadow 150ms ease, filter 150ms ease, opacity 150ms ease' }}
                               >
-                                Điều phối xe
+                                Điều phối
                               </button>
                               <button
                                 onClick={() => { setRejectOrder(order); setRejectAction('reject'); setRejectReason(''); }}
@@ -358,7 +366,7 @@ export default function LogisticsPage() {
                             </>
                           )}
 
-                          {/* Tracking tab actions */}
+                          {/* Tracking tab: bom hàng chỉ khi đang giao */}
                           {activeTab === 'tracking' && order.status === 'shipping' && (
                             <>
                               <button
@@ -387,17 +395,9 @@ export default function LogisticsPage() {
                           )}
 
                           {activeTab === 'tracking' && order.status === 'completed' && (
-                            <>
-                              <span className={`px-3 py-1.5 rounded-full text-xs font-extrabold border ${t.bg} ${t.text} ${t.border}`}>
-                                ✓ Đã hoàn tất
-                              </span>
-                              <button
-                                onClick={() => { setRejectOrder(order); setRejectAction('returned'); setRejectReason(''); }}
-                                className="px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-gradient-to-r from-red-500 to-rose-500 shadow-md hover:-translate-y-0.5 hover:shadow-lg transition-all duration-150"
-                              >
-                                Báo bom hàng
-                              </button>
-                            </>
+                            <span className={`px-3 py-1.5 rounded-full text-xs font-extrabold border ${t.bg} ${t.text} ${t.border}`}>
+                              ✓ Đã hoàn tất
+                            </span>
                           )}
 
                           {activeTab === 'tracking' && ['returned', 'canceled'].includes(order.status) && (
@@ -425,7 +425,7 @@ export default function LogisticsPage() {
                 <div>
                   <p className="text-xs font-extrabold text-blue-600 uppercase tracking-widest">Điều phối vận chuyển</p>
                   <h3 className="text-xl font-black text-slate-900 mt-1 tracking-tight">Phân tuyến cho đơn {assignOrder.orderNo}</h3>
-                  <p className="text-sm text-slate-500 mt-1">Bổ sung đơn vị vận chuyển, tracking và phí dự tính trước khi chuyển sang kho.</p>
+                  <p className="text-sm text-slate-500 mt-1">Bổ sung đơn vị vận chuyển, mã tracking và phí dự kiến trước khi chuyển sang kho xử lý.</p>
                 </div>
                 <button onClick={() => setAssignOrder(null)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
                   ×
@@ -484,28 +484,34 @@ export default function LogisticsPage() {
             <div className="bg-white rounded-3xl border border-red-200 w-full max-w-lg p-7 shadow-2xl"
               style={{ animation: 'scaleIn 220ms ease-out' }}>
               <div className="flex items-start justify-between gap-4 mb-5">
-                <div>
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold">CẢNH BÁO</span>
-                  <h3 className="text-xl font-black text-slate-900 mt-3 tracking-tight">
-                    {rejectAction === 'reject' ? 'Từ chối đơn hàng' : 'Báo cáo khách hoàn trả / bom hàng'}
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-1">Ghi nhận lý do xử lý sự cố để các bộ phận khác dễ theo dõi.</p>
-                </div>
+              <div>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold">
+                  {rejectAction === 'reject' ? '⚠ SAI THÔNG TIN' : '⚠ BOM HÀNG / HOÀN TRẢ'}
+                </span>
+                <h3 className="text-xl font-black text-slate-900 mt-3 tracking-tight">
+                  {rejectAction === 'reject' ? 'Từ chối đơn hàng - Sai thông tin' : 'Báo cáo bom hàng / hoàn trả'}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {rejectAction === 'reject'
+                    ? 'Đơn sẽ bị trả về cho Sales để chỉnh sửa thông tin. Sale có thể sửa lại hoặc xóa đơn.'
+                    : 'Ghi nhận sự cố giao nhận, đơn sẽ chuyển sang trạng thái hoàn trả. Logistics xử lý tiếp.'}
+                </p>
+              </div>
                 <button onClick={() => setRejectOrder(null)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
                   ×
                 </button>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-5">
-                <p className="text-xs text-slate-500 font-bold">Khách hàng</p>
-                <p className="font-extrabold text-slate-900 mt-1">{rejectOrder.customer?.name || '—'}</p>
+                <p className="text-xs text-slate-500 font-bold">Mã đơn</p>
                 <p className="font-mono font-black text-blue-600 mt-1">{rejectOrder.orderNo}</p>
+                <p className="font-extrabold text-slate-900 mt-1">{rejectOrder.customer?.name || '—'}</p>
               </div>
 
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-2">
-                    Lý do chi tiết <span className="text-red-500">*</span>
+                    Lý do từ chối <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     value={rejectReason}
@@ -513,8 +519,8 @@ export default function LogisticsPage() {
                     rows={4}
                     placeholder={
                       rejectAction === 'reject'
-                        ? 'Sai địa chỉ, không có tuyến giao, khách hủy đơn...'
-                        : 'Gọi nhiều lần không nghe máy, hàng bị móp méo, khách từ chối nhận...'
+                        ? 'VD: Sai địa chỉ giao hàng, SĐT khách không liên lạc được, Nhầm sản phẩm...'
+                        : 'VD: Gọi nhiều lần không nghe máy, hàng bị móp méo, khách từ chối nhận...'
                     }
                     className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 transition-all resize-none"
                   />
@@ -528,7 +534,7 @@ export default function LogisticsPage() {
                   className="flex-1 px-5 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                 >
                   {saving && <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 16 0"/></svg>}
-                  Gửi báo cáo
+                  Từ chối đơn hàng
                 </button>
                 <button onClick={() => setRejectOrder(null)} className="px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 transition-all cursor-pointer">
                   Hủy

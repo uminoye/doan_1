@@ -183,9 +183,6 @@ export const salesOrderService = {
   update(id: string, data: { customerId?: string; expectedDeliveryDate?: string; note?: string; items?: { productId: string; quantity: number; unitPrice?: number }[] }) {
     return api.put(`/transactions/sales-orders/${id}`, data);
   },
-  submit(id: string) {
-    return api.post(`/transactions/sales-orders/${id}/submit`);
-  },
   processLogistics(salesOrderId: string, newStatus: string, note?: string) {
     return api.post(`/transactions/sales-orders/${salesOrderId}/process-logistics`, { newStatus, note });
   },
@@ -201,9 +198,6 @@ export const salesOrderService = {
   returnInventory(salesOrderId: string) {
     return api.post(`/transactions/sales-orders/${salesOrderId}/return-inventory`);
   },
-  cancel(id: string) {
-    return api.post(`/transactions/sales-orders/${id}/cancel`);
-  },
   delete(id: string) {
     return api.delete(`/transactions/sales-orders/${id}`);
   },
@@ -212,9 +206,6 @@ export const salesOrderService = {
 export const logisticsService = {
   getAll(params?: { page?: number; limit?: number; status?: string }) {
     return api.get('/transactions/logistics', { params });
-  },
-  receiveOrder(salesOrderId: string, note?: string) {
-    return api.post('/transactions/logistics/receive', { salesOrderId, note });
   },
   forwardToWarehouse(salesOrderId: string, note?: string) {
     return api.post('/transactions/logistics/forward', { salesOrderId, note });

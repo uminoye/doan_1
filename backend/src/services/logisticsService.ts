@@ -89,15 +89,15 @@ export class LogisticsService {
     return this.getDeliveryRequestByOrderId(salesOrderId);
   }
 
-  /** Logistics chuyển đơn xuống kho */
+  /** Logistics chuyển đơn xuống kho (từ pending hoặc logistics_review) */
   async forwardToWarehouse(salesOrderId: string, note?: string, userName?: string) {
     const order = await prisma.salesOrder.findUnique({
       where: { id: salesOrderId },
       include: { delivery: true },
     });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
-    if (order.status !== 'pending') {
-      throw new AppError(400, 'Đơn phải ở trạng thái pending');
+    if (!['pending', 'logistics_review'].includes(order.status)) {
+      throw new AppError(400, 'Đơn phải ở trạng thái chờ duyệt hoặc logistics xem xét lại');
     }
 
     await prisma.$transaction(async (tx) => {
@@ -126,13 +126,16 @@ export class LogisticsService {
     return this.getDeliveryRequestByOrderId(salesOrderId);
   }
 
-  /** Logistics từ chối đơn */
+  /** Logistics từ chối đơn (do sai thông tin) */
   async rejectOrder(salesOrderId: string, reason: string, userName?: string) {
     const order = await prisma.salesOrder.findUnique({
       where: { id: salesOrderId },
       include: { delivery: true },
     });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'pending') {
+      throw new AppError(400, 'Chỉ có thể từ chối đơn đang ở trạng thái chờ duyệt');
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.deliveryRequest.upsert({
@@ -141,23 +144,23 @@ export class LogisticsService {
           salesOrderId,
           receivedBy: userName,
           receivedAt: new Date(),
-          note: `[TỪ CHỐI]: ${reason}`,
-          status: 'returned',
+          note: `[TỪ CHỐI - SAI THÔNG TIN]: ${reason}`,
+          status: 'logistics_rejected',
         },
         update: {
-          status: 'returned',
-          note: `[TỪ CHỐI]: ${reason}`,
+          status: 'logistics_rejected',
+          note: `[TỪ CHỐI - SAI THÔNG TIN]: ${reason}`,
           receivedAt: new Date(),
         },
       });
 
       await tx.salesOrder.update({
         where: { id: salesOrderId },
-        data: { status: 'returned', note: `[TỪ CHỐI]: ${reason}` },
+        data: { status: 'logistics_rejected', note: `[TỪ CHỐI - SAI THÔNG TIN]: ${reason}` },
       });
     });
 
-    return { message: 'Đã từ chối đơn hàng!' };
+    return { message: 'Đã từ chối đơn hàng. Sale có thể sửa lại hoặc xóa đơn.' };
   }
 
   /** Logistics xác nhận giao hàng thành công */
