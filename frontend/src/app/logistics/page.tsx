@@ -43,23 +43,18 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const REJECTION_REASONS = [
-  'Khách đổi ý không nhận',
+  'Khách không nhận hàng',
   'Hư hỏng do Vận chuyển',
-  'Lỗi do Nhà máy sản xuất',
 ];
 
 const REJECTION_MESSAGES: Record<string, { title: string; body: string }> = {
-  'Khách đổi ý không nhận': {
-    title: '⚠️ Khách đổi ý không nhận hàng',
+  'Khách không nhận hàng': {
+    title: '⚠️ Khách không nhận hàng',
     body: 'Hàng sẽ được trả về kho gốc. Tồn kho sẽ được cộng lại.',
   },
   'Hư hỏng do Vận chuyển': {
     title: '🚨 Hư hỏng do Vận chuyển',
     body: 'Yêu cầu ĐVVC đền bù và chuẩn bị đơn bù hàng cho khách. KHÔNG cộng lại tồn kho.',
-  },
-  'Lỗi do Nhà máy sản xuất': {
-    title: '🏭 Lỗi do Nhà máy sản xuất',
-    body: 'Hàng sẽ được chuyển vào Kho Hàng Lỗi. KHÔNG cộng lại vào tồn kho bán hàng.',
   },
 };
 
@@ -773,13 +768,13 @@ export default function LogisticsPage() {
       setSimulatingPhase('📦 Đã giao tới nơi - Chờ xác nhận');
       setIsSimulating(false); // Stop simulation after reaching step 4
 
-      // Gọi API advanceStep để cập nhật backend thực
+      // Gọi API simulateDelivery — tự động random 2 lý do từ chối ở bước cuối
       try {
-        const res = await shipmentService.advanceStep(trackingOrder.id);
+        const res = await shipmentService.simulateDelivery(trackingOrder.id);
         setTrackingShipment((prev: any) => ({
           ...prev,
-          currentStep: res.data.currentStep,
-          status: res.data.currentStep === 4 ? 'completed' : 'shipping',
+          currentStep: res.data?.currentStep ?? 4,
+          status: res.data?.status ?? 'completed',
         }));
         fetchData();
       } catch (_) {}

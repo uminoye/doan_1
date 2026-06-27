@@ -49,17 +49,6 @@ async function main() {
   }
   console.log('✅ Users created (password: 123456 for all)');
 
-  // ===== CATEGORIES =====
-  const catNames = ['Nội thất', 'Điện tử', 'Thực phẩm', 'Dược phẩm', 'May mặc'];
-  for (let i = 0; i < catNames.length; i++) {
-    await prisma.category.upsert({
-      where: { categoryCode: `DM${String(i + 1).padStart(3, '0')}` },
-      update: {},
-      create: { categoryCode: `DM${String(i + 1).padStart(3, '0')}`, name: catNames[i] },
-    });
-  }
-  console.log('✅ Categories created');
-
   // ===== WAREHOUSES =====
   const warehouses = [
     { warehouseCode: 'KHO001', name: 'Kho Hà Nội', location: 'Quận Bắc Từ Liêm, Hà Nội' },
@@ -67,39 +56,22 @@ async function main() {
     { warehouseCode: 'KHO003', name: 'Kho Đà Nẵng', location: 'Quận Liên Chiểu, Đà Nẵng' },
   ];
 
-  const createdWarehouses: any[] = [];
   for (const wh of warehouses) {
-    const created = await prisma.warehouse.upsert({
+    await prisma.warehouse.upsert({
       where: { warehouseCode: wh.warehouseCode },
       update: {},
       create: wh,
     });
-    createdWarehouses.push(created);
   }
   console.log('✅ Warehouses created');
 
-  // ===== PRODUCTS =====
-  const products = [
-    { sku: 'SP001', name: 'Bàn ghế văn phòng', unit: 'bộ', category: 'Nội thất', salePrice: 2500000, minStock: 10 },
-    { sku: 'SP002', name: 'Máy tính xách tay Dell XPS', unit: 'cái', category: 'Điện tử', salePrice: 18500000, minStock: 5 },
-    { sku: 'SP003', name: 'Máy in HP LaserJet', unit: 'cái', category: 'Điện tử', salePrice: 4500000, minStock: 3 },
-    { sku: 'SP004', name: 'Ghế ergonomic', unit: 'cái', category: 'Nội thất', salePrice: 3200000, minStock: 10 },
-    { sku: 'SP005', name: 'Màn hình LG 27 inch', unit: 'cái', category: 'Điện tử', salePrice: 5500000, minStock: 8 },
-    { sku: 'SP006', name: 'Bàn làm việc', unit: 'cái', category: 'Nội thất', salePrice: 1800000, minStock: 15 },
-    { sku: 'SP007', name: 'Điện thoại Samsung Galaxy', unit: 'cái', category: 'Điện tử', salePrice: 8900000, minStock: 5 },
-    { sku: 'SP008', name: 'Tủ hồ sơ 3 ngăn', unit: 'cái', category: 'Nội thất', salePrice: 1200000, minStock: 10 },
-  ];
-
-  const createdProducts: any[] = [];
-  for (const prod of products) {
-    const created = await prisma.product.upsert({
-      where: { sku: prod.sku },
-      update: {},
-      create: prod,
-    });
-    createdProducts.push(created);
-  }
-  console.log('✅ Products created');
+  // ===== DEFECTIVE WAREHOUSE =====
+  await prisma.warehouse.upsert({
+    where: { warehouseCode: 'KHO004' },
+    update: {},
+    create: { warehouseCode: 'KHO004', name: 'Kho Hàng Lỗi - Phân Loại', location: 'Khu vực phân loại', isDefectiveWarehouse: true },
+  });
+  console.log('✅ Defective warehouse created');
 
   // ===== CUSTOMERS =====
   const customers = [
@@ -110,14 +82,12 @@ async function main() {
     { customerCode: 'KH005', name: 'Công ty Viễn Thông V', phone: '0285551234', address: 'TP.HCM', contactPerson: 'Hoàng E' },
   ];
 
-  const createdCustomers: any[] = [];
   for (const cust of customers) {
-    const created = await prisma.customer.upsert({
+    await prisma.customer.upsert({
       where: { customerCode: cust.customerCode },
       update: {},
       create: cust,
     });
-    createdCustomers.push(created);
   }
   console.log('✅ Customers created');
 
@@ -133,67 +103,6 @@ async function main() {
     await prisma.carrier.upsert({ where: { code: c.code }, update: {}, create: c });
   }
   console.log('✅ Carriers created');
-
-  // ===== DEFECTIVE WAREHOUSE =====
-  await prisma.warehouse.upsert({
-    where: { warehouseCode: 'KHO004' },
-    update: {},
-    create: { warehouseCode: 'KHO004', name: 'Kho Hàng Lỗi - Phân Loại', location: 'Khu vực phân loại', isDefectiveWarehouse: true },
-  });
-  console.log('✅ Defective warehouse created');
-  const hanoiWh = createdWarehouses[0];
-  for (const product of createdProducts) {
-    await prisma.inventoryBalance.upsert({
-      where: { warehouseId_productId: { warehouseId: hanoiWh.id, productId: product.id } },
-      update: {},
-      create: { warehouseId: hanoiWh.id, productId: product.id, onHandQty: 50, reservedQty: 0 },
-    });
-  }
-  console.log('✅ Inventory balances created');
-
-  // ===== SALES ORDERS (for logistics demo) =====
-  const salesUser = await prisma.user.findFirst({ where: { email: 'sales@wms.com' } });
-  const logisticsUser = await prisma.user.findFirst({ where: { email: 'logistics@wms.com' } });
-  const abcCustomer = createdCustomers[0];
-  const sampleProducts = createdProducts.slice(0, 3);
-
-  const sampleOrder = await prisma.salesOrder.upsert({
-    where: { orderNo: 'DH-2024-001' },
-    update: {},
-    create: {
-      orderNo: 'DH-2024-001',
-      customerId: abcCustomer.id,
-      createdById: salesUser!.id,
-      status: 'submitted',
-      orderDate: new Date(),
-      expectedDeliveryDate: new Date(Date.now() + 3 * 86400000),
-    },
-  });
-
-  // Xóa items cũ + tạo lại (idempotent)
-  await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: sampleOrder.id } });
-  await prisma.salesOrderItem.createMany({
-    data: sampleProducts.map((p) => ({
-      salesOrderId: sampleOrder.id,
-      productId: p.id,
-      quantity: 10,
-      unitPrice: p.salePrice,
-    })),
-  });
-
-  // Delivery request đã được logistics tiếp nhận
-  await prisma.deliveryRequest.upsert({
-    where: { salesOrderId: sampleOrder.id },
-    update: {},
-    create: {
-      salesOrderId: sampleOrder.id,
-      receivedBy: logisticsUser!.fullName,
-      receivedAt: new Date(),
-      status: 'warehouse_processing',
-    },
-  });
-
-  console.log('✅ Sales orders created (ready for logistics)');
 
   console.log('\n🎉 Seed completed!');
   console.log('\n📋 Login credentials:');
