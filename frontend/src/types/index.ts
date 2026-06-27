@@ -161,6 +161,7 @@ export interface InventoryBalance {
   onHandQty: number;
   reservedQty: number;
   availableQty: number;
+  isDefective?: boolean;
 }
 
 export interface InventoryTransaction {
