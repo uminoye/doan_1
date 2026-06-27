@@ -3,7 +3,6 @@ import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { authService } from '@/services';
-import { clsx } from 'clsx';
 
 const LOGO_URL = 'https://cdn.haitrieu.com/wp-content/uploads/2023/03/Logo-Truong-Cao-dang-nghe-Cong-nghe-cao-Dong-An.png';
 
@@ -20,8 +19,8 @@ const MENU_GROUPS = [
     title: 'NGHIỆP VỤ',
     items: [
       { path: '/products', label: 'Quản lý sản phẩm', icon: 'ri-box-3-line', roles: ['admin', 'sales', 'warehouse', 'factory'] },
-      { path: '/receipts', label: 'Nhập kho', icon: 'ri-inbox-line', roles: ['admin', 'warehouse', 'factory'] },
-      { path: '/outbounds', label: 'Xuất kho', icon: 'ri-send-plane-line', roles: ['admin', 'warehouse'] },
+      { path: '/receipts', label: 'Phiếu Nhập Kho', icon: 'ri-inbox-line', roles: ['admin', 'warehouse', 'factory'] },
+      { path: '/outbounds', label: 'Phiếu Xuất Kho', icon: 'ri-send-plane-line', roles: ['admin', 'warehouse'] },
       { path: '/sales-orders', label: 'Quản lý đơn hàng', icon: 'ri-shopping-cart-2-line', roles: ['admin', 'sales'] },
       { path: '/logistics', label: 'Tiếp nhận giao hàng', icon: 'ri-truck-line', roles: ['admin', 'logistics'] },
       { path: '/reports', label: 'Báo cáo', icon: 'ri-bar-chart-box-line', roles: ['admin', 'warehouse'] },
@@ -35,14 +34,6 @@ const MENU_GROUPS = [
     ],
   },
 ];
-
-const ROLE_NAMES: Record<string, string> = {
-  admin: 'Admin',
-  sales: 'Sales',
-  logistics: 'Logistics',
-  warehouse: 'Kho',
-  factory: 'Nhà máy',
-};
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -60,12 +51,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!user) return null;
 
-  const userRoleName = user.role_name || ROLE_NAMES[user.role_id] || 'Người dùng';
+  const userRole = user.role_name || 'guest';
 
   const visibleGroups = MENU_GROUPS
     .map(group => ({
       ...group,
-      items: group.items.filter(item => item.roles.includes(user.role_id)),
+      items: group.items.filter(item => item.roles.includes(userRole)),
     }))
     .filter(group => group.items.length > 0);
 
@@ -126,7 +117,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.full_name || 'Người dùng'}</div>
-                <div style={{ fontSize: 12, color: '#34d399' }}>{userRoleName}</div>
+                <div style={{ fontSize: 12, color: '#34d399' }}>{userRole}</div>
               </div>
             </div>
           </div>
@@ -238,6 +229,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </button>
             {showUserMenu && (
               <div style={{ position: 'absolute', right: 0, top: 48, width: 180, background: '#fff', borderRadius: 14, boxShadow: '0 18px 32px rgba(15,23,42,0.12)', border: '1px solid #e2e8f0', padding: 8 }}>
+                <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{user.full_name}</div>
+                  <div style={{ fontSize: 12, color: '#10b981', marginTop: 2, textTransform: 'capitalize' }}>{userRole}</div>
+                </div>
                 <button onClick={handleLogout} style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', color: '#ef4444', fontWeight: 600 }}>
                   Đăng xuất
                 </button>
