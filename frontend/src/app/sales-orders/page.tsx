@@ -60,7 +60,7 @@ function normalizeOrderItems(order: any) {
 function formatOrderItems(order: any) {
   const items = normalizeOrderItems(order);
   if (!items.length) return 'Chưa có sản phẩm';
-  return items.map(i => `${i.product_name} x${i.quantity}`).join(', ');
+  return items.map((i: any) => `${i.product_name} x${i.quantity}`).join(', ');
 }
 
 export default function SalesOrdersPage() {
