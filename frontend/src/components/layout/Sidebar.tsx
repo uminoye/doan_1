@@ -26,10 +26,10 @@ const menuSections: MenuSection[] = [
     title: 'Tổng quan',
     items: [
       { label: 'Dashboard', href: '/', icon: '📊', color: 'text-blue-400', roles: ['admin'] },
-      { label: 'Đơn hàng của tôi', href: '/', icon: '📈', color: 'text-blue-400', roles: ['sales'] },
-      { label: 'Tổng quan Kho', href: '/', icon: '🏢', color: 'text-blue-400', roles: ['warehouse'] },
-      { label: 'Sản xuất', href: '/', icon: '🏭', color: 'text-blue-400', roles: ['factory'] },
-      { label: 'Tiếp nhận Giao', href: '/', icon: '🚚', color: 'text-blue-400', roles: ['logistics'] },
+      { label: 'Đơn hàng của tôi', href: '/sales-orders/', icon: '📈', color: 'text-blue-400', roles: ['sales'] },
+      { label: 'Tổng quan Kho', href: '/inventory/', icon: '🏢', color: 'text-blue-400', roles: ['warehouse'] },
+      { label: 'Sản xuất', href: '/production-receipts/', icon: '🏭', color: 'text-blue-400', roles: ['factory'] },
+      { label: 'Tiếp nhận Giao', href: '/logistics/', icon: '🚚', color: 'text-blue-400', roles: ['logistics'] },
     ],
   },
   {
@@ -38,6 +38,7 @@ const menuSections: MenuSection[] = [
       { label: 'Sản phẩm', href: '/products/', icon: '📦', color: 'text-blue-400', roles: ['admin'] },
       { label: 'Khách hàng', href: '/customers/', icon: '🤝', color: 'text-blue-400', roles: ['admin', 'sales'] },
       { label: 'Tài khoản', href: '/users/', icon: '👥', color: 'text-blue-400', roles: ['admin'] },
+      { label: 'Kho hàng', href: '/warehouses/', icon: '🏬', color: 'text-blue-400', roles: ['admin'] },
     ],
   },
   {
