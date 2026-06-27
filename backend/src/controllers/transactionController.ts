@@ -302,6 +302,13 @@ export const shipmentController = {
   create: asyncHandler(async (req: Request, res: Response) => {
     res.status(201).json(await shipmentService.createShipment(req.body));
   }),
+  createAndForward: asyncHandler(async (req: Request, res: Response) => {
+    const userName = (req as any).user?.fullName || (req as any).user?.email;
+    res.status(201).json(await shipmentService.createAndForward({ ...req.body, userName }));
+  }),
+  simulateDelivery: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await shipmentService.simulateDelivery(String(req.params.salesOrderId)));
+  }),
   advanceStep: asyncHandler(async (req: Request, res: Response) => {
     res.json(await shipmentService.advanceStep(String(req.params.salesOrderId)));
   }),

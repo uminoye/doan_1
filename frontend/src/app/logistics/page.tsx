@@ -1,29 +1,21 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { logisticsService, salesOrderService, carrierService, shipmentService, notificationService } from '@/services';
-import { SalesOrder, Notification } from '@/types';
+import { logisticsService, carrierService, shipmentService, notificationService } from '@/services';
+import { Notification, Carrier, Shipment } from '@/types';
 import { SHIPMENT_STEP_LABELS } from '@/types';
 import dayjs from 'dayjs';
 
-const CARRIERS = [
-  { id: '__xct__', name: 'Xe Công Ty (Nội bộ)', code: 'XCT', autoPrefix: 'XCT' },
-  { id: '__ghtk__', name: 'Giao Hàng Tiết Kiệm', code: 'GHTK', autoPrefix: 'GHTK' },
-  { id: '__vtp__', name: 'Viettel Post', code: 'VTP', autoPrefix: 'VTP' },
-  { id: '__ge__', name: 'Grab Express', code: 'GE', autoPrefix: 'GE' },
-  { id: '__ahm__', name: 'Ahamove', code: 'AHM', autoPrefix: 'AHM' },
-];
-
 const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
-  pending:              { label: 'Chờ duyệt',            tone: 'amber' },
+  pending:              { label: 'Chờ duyệt',             tone: 'amber' },
   logistics_review:    { label: 'Logistics xem xét lại', tone: 'orange' },
-  warehouse_processing: { label: 'Kho đang xử lý',     tone: 'blue' },
-  warehouse_rejected:  { label: 'Kho từ chối',         tone: 'red' },
-  warehouse_delayed:   { label: 'Dời ngày',             tone: 'amber' },
-  shipping:            { label: 'Đang giao hàng',       tone: 'purple' },
-  completed:           { label: 'Đã giao thành công',   tone: 'green' },
-  returned:            { label: 'Hoàn trả',               tone: 'red' },
-  canceled:            { label: 'Hủy đơn',               tone: 'gray' },
+  warehouse_processing: { label: 'Kho đang xử lý',      tone: 'blue' },
+  warehouse_rejected:  { label: 'Kho từ chối',          tone: 'red' },
+  warehouse_delayed:   { label: 'Dời ngày',              tone: 'amber' },
+  shipping:           { label: 'Đang giao hàng',         tone: 'purple' },
+  completed:          { label: 'Đã giao thành công',     tone: 'green' },
+  returned:           { label: 'Hoàn trả',                tone: 'red' },
+  canceled:           { label: 'Hủy đơn',                tone: 'gray' },
 };
 
 const TONE: Record<string, { bg: string; text: string; border: string }> = {
@@ -49,38 +41,324 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// REJECTION REASONS
 const REJECTION_REASONS = [
-  'Địa chỉ giao hàng không đầy đủ hoặc không tìm thấy',
-  'Khách hàng không liên lạc được / không có người nhận',
-  'Sản phẩm yêu cầu không đúng với đơn đặt',
-  'Khách hàng từ chối nhận hàng khi giao đến',
-  'Đơn bị trùng lặp hoặc đã hủy trước đó',
-  'Lý do khác (ghi rõ bên dưới)',
+  'Hàng lỗi không hoạt động (Do nhà máy)',
+  'Hàng bể vỡ do vận chuyển',
+  'Khách không lấy hàng',
 ];
 
 const REJECTION_NOTE = 'Vui lòng ghi rõ lý do từ chối để Sale xem xét và xử lý.';
 
+// ── Progress stepper component ──────────────────────────────────────
+function ShipmentProgressBar({ currentStep, total = 5 }: { currentStep: number; total?: number }) {
+  const steps = [0, 1, 2, 3, 4];
+  const labels = ['Kho đang xử lý', 'ĐVVC lấy hàng', 'Đến kho khu vực', 'Đang giao', 'Thành công'];
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1">
+        {steps.map((s, i) => {
+          const done = s < currentStep;
+          const active = s === currentStep;
+          const failed = currentStep === -1;
+          const color = done
+            ? 'bg-green-500 border-green-500 text-white'
+            : active
+              ? failed
+                ? 'bg-red-500 border-red-500 text-white'
+                : 'bg-blue-600 border-blue-600 text-white'
+              : 'bg-gray-100 border-gray-200 text-gray-400';
+          return (
+            <div key={s} className="flex items-center flex-1 last:flex-none">
+              <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-black flex-shrink-0 transition-all ${color} shadow-sm`}>
+                {done ? '✓' : active ? (failed ? '✗' : '●') : i + 1}
+              </div>
+              {i < steps.length - 1 && (
+                <div className={`flex-1 h-1 mx-1 rounded-full transition-all ${done ? 'bg-green-400' : 'bg-gray-200'}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between px-0.5">
+        {labels.map((l, i) => (
+          <span key={i} className={`text-[10px] font-semibold text-center ${i === currentStep ? 'text-blue-600 font-bold' : 'text-slate-400'}`} style={{ maxWidth: '60px' }}>
+            {l}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Tracking modal ─────────────────────────────────────────────────
+function TrackingModal({
+  order,
+  shipment,
+  carriers,
+  onClose,
+  onAdvance,
+  onSimulate,
+  onConfirm,
+  onReject,
+  onAddCarrier,
+  saving,
+  rejectReason,
+  setRejectReason,
+  rejectNote,
+  setRejectNote,
+  detailStep,
+  setDetailStep,
+  totalAmount,
+}: {
+  order: any;
+  shipment: Shipment;
+  carriers: Carrier[];
+  onClose: () => void;
+  onAdvance: () => void;
+  onSimulate: () => void;
+  onConfirm: () => void;
+  onReject: (reason: string) => void;
+  onAddCarrier: (name: string, code: string) => void;
+  saving: boolean;
+  rejectReason: string;
+  setRejectReason: (r: string) => void;
+  rejectNote: string;
+  setRejectNote: (n: string) => void;
+  detailStep: 'view' | 'reject';
+  setDetailStep: (s: 'view' | 'reject') => void;
+  totalAmount: (items: any[]) => number;
+}) {
+  const isCompleted = shipment.status === 'completed';
+  const isFailed = shipment.status === 'failed';
+  const isShipping = shipment.status === 'shipping';
+  const step = isFailed ? -1 : shipment.currentStep;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      style={{ animation: 'fadeIn 180ms ease-out' }}>
+      <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-2xl max-h-[92vh] overflow-y-auto shadow-2xl"
+        style={{ animation: 'scaleIn 220ms ease-out' }}>
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-7 py-5 border-b border-slate-100 sticky top-0 bg-white rounded-t-3xl z-10">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-extrabold">THEO DÕI VẬN CHUYỂN</span>
+              <StatusBadge status={shipment.status} />
+            </div>
+            <h2 className="text-xl font-black text-slate-900">{order?.orderNo}</h2>
+            <p className="text-sm text-slate-500 mt-0.5">{order?.customer?.name}</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all flex-shrink-0 cursor-pointer">
+            ×
+          </button>
+        </div>
+
+        <div className="px-7 py-5 space-y-5">
+
+          {/* Thông tin vận chuyển */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-slate-50 rounded-xl px-4 py-3">
+              <p className="text-xs font-bold text-slate-500 mb-1">ĐVVC</p>
+              <p className="font-semibold text-slate-800 text-sm">{shipment.carrier?.name || '—'}</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl px-4 py-3">
+              <p className="text-xs font-bold text-slate-500 mb-1">Mã vận đơn</p>
+              <p className="font-mono font-bold text-blue-600 text-sm">{shipment.trackingNo || '—'}</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl px-4 py-3">
+              <p className="text-xs font-bold text-slate-500 mb-1">Phí ship</p>
+              <p className="font-semibold text-slate-800 text-sm">{shipment.shippingFee ? VND(shipment.shippingFee) + ' đ' : '—'}</p>
+            </div>
+          </div>
+
+          {/* Thanh tiến trình */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+            <ShipmentProgressBar currentStep={step} />
+          </div>
+
+          {/* Bảng sản phẩm */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Sản phẩm trong đơn</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Sản phẩm</th>
+                    <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">SL</th>
+                    <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(order?.items || []).map((item: any) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium text-slate-800 text-sm">{item.product?.name}</p>
+                        <p className="text-xs text-slate-400 font-mono">{item.product?.sku}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-bold text-slate-800">{item.quantity}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700">{VND(item.quantity * Number(item.unitPrice || 0))} đ</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 border-t border-slate-200">
+                  <tr>
+                    <td colSpan={2} className="px-4 py-2.5 text-right font-extrabold text-slate-700">Tổng cộng:</td>
+                    <td className="px-4 py-2.5 text-right font-black text-blue-600">{VND(totalAmount(order?.items))} đ</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Rejection detail */}
+          {isFailed && shipment.rejectionReason && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+              <p className="text-xs font-bold text-red-600 mb-1">LÝ DO KHÁCH TỪ CHỐI</p>
+              <p className="text-sm text-red-700 font-semibold">{shipment.rejectionReason}</p>
+              <p className="text-xs text-red-500 mt-1">Trạng thái: Hàng đã được xử lý theo quy trình hoàn trả / kho hàng lỗi.</p>
+            </div>
+          )}
+
+          {/* Hành động */}
+          {!isCompleted && !isFailed && (
+            <div className="space-y-3">
+              {detailStep === 'view' ? (
+                <div className="space-y-2">
+                  {isShipping && step < 4 && (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={onSimulate}
+                        disabled={saving}
+                        className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-purple-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                      >
+                        {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                        🎲 Giao thử (80% thành công / 20% từ chối)
+                      </button>
+                      <button
+                        onClick={onAdvance}
+                        disabled={saving}
+                        className="px-5 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                      >
+                        Tiến bước →
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setDetailStep('reject'); setRejectReason(''); setRejectNote(''); }}
+                      className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      ✗ Xử lý từ chối
+                    </button>
+                    {isShipping && step === 3 && (
+                      <button
+                        onClick={onConfirm}
+                        disabled={saving}
+                        className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                      >
+                        ✓ Xác nhận giao thành công
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-center text-slate-400">
+                    Bước {step + 1}/5 — {SHIPMENT_STEP_LABELS[step as keyof typeof SHIPMENT_STEP_LABELS] || '—'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm font-bold text-slate-700">Chọn lý do khách từ chối:</p>
+                  <div className="space-y-2">
+                    {REJECTION_REASONS.map(r => (
+                      <button key={r} onClick={() => setRejectReason(r)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                          rejectReason === r ? 'border-red-400 bg-red-50 shadow-sm' : 'border-slate-200 bg-white hover:border-red-300'
+                        }`}>
+                        <span className={`text-sm font-semibold ${rejectReason === r ? 'text-red-700' : 'text-slate-700'}`}>{r}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {(rejectReason === REJECTION_NOTE || rejectReason.includes('khác')) && (
+                    <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={2}
+                      placeholder="VD: Địa chỉ 123 Nguyễn Trãi nhưng không có ai nhận..."
+                      className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 resize-none" />
+                  )}
+                  <div className="flex gap-3">
+                    <button onClick={() => setDetailStep('view')}
+                      className="px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all cursor-pointer">
+                      ← Quay lại
+                    </button>
+                    <button
+                      onClick={() => onReject(rejectReason)}
+                      disabled={!rejectReason || saving}
+                      className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                      ✓ Xác nhận từ chối
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isCompleted && (
+            <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 text-center">
+              <p className="text-green-700 font-extrabold text-lg">✓ Giao hàng thành công!</p>
+              <p className="text-green-600 text-sm mt-1">Cảm ơn quý khách đã mua sắm tại WMS.</p>
+            </div>
+          )}
+
+          {isFailed && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 text-center">
+              <p className="text-red-700 font-extrabold text-lg">✗ Giao hàng thất bại</p>
+              <p className="text-red-600 text-sm mt-1">Xem lý do từ chối bên trên.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────
 export default function LogisticsPage() {
-  const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'pending' | 'tracking' | 'notifications'>('pending');
   const [search, setSearch] = useState('');
 
-  // Modal chi tiết đơn + hành động
-  const [detailOrder, setDetailOrder] = useState<SalesOrder | null>(null);
+  // Modal chi tiết đơn (pending tab)
+  const [detailOrder, setDetailOrder] = useState<any>(null);
   const [detailStep, setDetailStep] = useState<'view' | 'reject' | 'confirm'>('view');
 
-  // Từ chối
+  // Modal tracking (tracking tab)
+  const [trackingOrder, setTrackingOrder] = useState<any>(null);
+  const [trackingShipment, setTrackingShipment] = useState<Shipment | null>(null);
+  const [trackingStep, setTrackingStep] = useState<'view' | 'reject'>('view');
+  const [trackingRejectReason, setTrackingRejectReason] = useState('');
+  const [trackingRejectNote, setTrackingRejectNote] = useState('');
+
+  // Từ chối logistics
   const [rejectReason, setRejectReason] = useState('');
   const [rejectNote, setRejectNote] = useState('');
 
   // Xác nhận điều phối
-  const [selectedCarrierId, setSelectedCarrierId] = useState(CARRIERS[0].id);
+  const [selectedCarrierId, setSelectedCarrierId] = useState('');
   const [shippingFee, setShippingFee] = useState('');
   const [saving, setSaving] = useState(false);
-  const [carriers, setCarriers] = useState<any[]>(CARRIERS);
+  const [carriers, setCarriers] = useState<Carrier[]>([]);
+
+  // Thêm ĐVVC mới
+  const [showAddCarrier, setShowAddCarrier] = useState(false);
+  const [newCarrierName, setNewCarrierName] = useState('');
+  const [newCarrierCode, setNewCarrierCode] = useState('');
+  const [addCarrierSaving, setAddCarrierSaving] = useState(false);
 
   // Modal thông báo
   const [notifModal, setNotifModal] = useState(false);
@@ -90,20 +368,24 @@ export default function LogisticsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [oRes, nRes] = await Promise.all([
-        salesOrderService.getAll({ limit: 200 }),
+      const [oRes, nRes, sRes, cRes] = await Promise.all([
+        logisticsService.getAll({ limit: 200 }),
         notificationService.getAll({ limit: 50 }),
+        shipmentService.getAllTracking({ limit: 200 }),
+        carrierService.getAll(),
       ]);
-      setOrders(oRes.data.data || []);
-      setNotifications(nRes.data.data || []);
-      try {
-        const cRes = await carrierService.getAll();
-        const dbC = (cRes.data || []) as any[];
-        if (dbC.length > 0) setCarriers([...CARRIERS, ...dbC]);
-      } catch (_) { /* use defaults */ }
+      const allOrders: any[] = [];
+      (oRes.data?.data || []).forEach((r: any) => { if (r.salesOrder) allOrders.push(r.salesOrder); });
+      const directOrders = (oRes.data?.data || []).filter((r: any) => !r.salesOrder && r.orderNo);
+      setOrders([...allOrders, ...directOrders]);
+      setNotifications(nRes.data?.data || []);
+      setShipments(sRes.data?.data || []);
+      const dbC = (cRes.data || []) as Carrier[];
+      setCarriers(dbC);
+      if (dbC.length > 0 && !selectedCarrierId) setSelectedCarrierId(dbC[0].id);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [selectedCarrierId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -115,8 +397,12 @@ export default function LogisticsPage() {
   const pendingOrders = useMemo(() =>
     orders.filter(o => ['pending', 'logistics_review'].includes(o.status)), [orders]);
 
-  const trackingOrders = useMemo(() =>
-    orders.filter(o => ['warehouse_processing', 'shipping', 'completed', 'returned', 'canceled', 'warehouse_rejected', 'warehouse_delayed'].includes(o.status)), [orders]);
+  const allTracking = useMemo(() => {
+    return shipments.map(s => ({
+      shipment: s,
+      order: s.salesOrder || orders.find(o => o.id === s.salesOrderId),
+    })).filter(t => t.order);
+  }, [shipments, orders]);
 
   const filteredPending = useMemo(() => {
     if (!search.trim()) return pendingOrders;
@@ -128,18 +414,23 @@ export default function LogisticsPage() {
 
   const stats = {
     pending: pendingOrders.length,
-    tracking: trackingOrders.length,
+    tracking: allTracking.length,
     notif: notifications.filter(n => n.status === 'pending').length,
   };
 
-  // ==== HANDLERS ====
+  const totalAmount = (items: any[]) =>
+    items?.reduce((s, i) => s + i.quantity * Number(i.unitPrice || 0), 0) ?? 0;
+  const totalQty = (items: any[]) => items?.reduce((s, i) => s + i.quantity, 0) ?? 0;
 
-  const openDetail = (o: SalesOrder) => {
+  // ── Handlers ───────────────────────────────────────────────────
+
+  const openDetail = (o: any) => {
     setDetailOrder(o);
     setDetailStep('view');
     setRejectReason('');
     setRejectNote('');
-    setSelectedCarrierId(CARRIERS[0].id);
+    const def = carriers[0];
+    setSelectedCarrierId(def?.id || '');
     setShippingFee('');
   };
 
@@ -158,40 +449,124 @@ export default function LogisticsPage() {
   };
 
   const handleConfirmDispatch = async () => {
-    if (!detailOrder) return;
-    const carrier = carriers.find(c => c.id === selectedCarrierId) || CARRIERS[0];
-    const note = `[GIAO VẬN] ĐVVC: ${carrier.name}${shippingFee ? ` | Phí: ${VND(Number(shippingFee))}đ` : ''}`;
+    if (!detailOrder || !selectedCarrierId) { alert('Vui lòng chọn đơn vị vận chuyển'); return; }
     setSaving(true);
     try {
-      await logisticsService.forwardToWarehouse(detailOrder.id, note);
-      alert('Đã điều phối đơn sang kho xử lý!');
+      // Gọi API gộp: forward sang kho + tạo shipment + sinh trackingNo
+      await shipmentService.createAndForward({
+        salesOrderId: detailOrder.id,
+        carrierId: selectedCarrierId,
+        shippingFee: shippingFee ? Number(shippingFee) : undefined,
+        note: shippingFee ? `[GIAO VẬN] Phí: ${VND(Number(shippingFee))}đ` : undefined,
+      });
+      alert('Đã điều phối đơn sang kho xử lý! Mã vận đơn được tạo tự động.');
       setDetailOrder(null);
       fetchData();
     } catch (e: any) { alert(e.response?.data?.error || 'Lỗi điều phối'); }
     finally { setSaving(false); }
   };
 
-  const handleResolveNotif = async (n: Notification) => {
+  const handleOpenTracking = async (order: any) => {
+    setTrackingOrder(order);
+    setTrackingStep('view');
+    setTrackingRejectReason('');
+    setTrackingRejectNote('');
+    setTrackingShipment(null);
     try {
-      await notificationService.resolve(n.id);
-      fetchData();
-    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+      const res = await shipmentService.getByOrderId(order.id);
+      setTrackingShipment(res.data);
+    } catch (_) {}
   };
 
-  const totalAmount = (items: any[]) =>
-    items?.reduce((s, i) => s + i.quantity * Number(i.unitPrice || 0), 0) ?? 0;
+  const handleAdvance = async () => {
+    if (!trackingOrder) return;
+    setSaving(true);
+    try {
+      const res = await shipmentService.advanceStep(trackingOrder.id);
+      setTrackingShipment((prev: any) => ({ ...prev, currentStep: res.data.currentStep, status: res.data.currentStep === 4 ? 'completed' : 'shipping' }));
+      alert(res.data.message);
+      fetchData();
+    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+    finally { setSaving(false); }
+  };
 
-  const totalQty = (items: any[]) => items?.reduce((s, i) => s + i.quantity, 0) ?? 0;
+  const handleSimulate = async () => {
+    if (!trackingOrder) return;
+    setSaving(true);
+    try {
+      const res = await shipmentService.simulateDelivery(trackingOrder.id);
+      const result = res.data;
+      if (result.reason) {
+        // Từ chối
+        alert(`⚠️ Khách từ chối!\nLý do: ${result.reason}\n\nHệ thống tự động xử lý theo quy trình.`);
+        setTrackingShipment((prev: any) => ({ ...prev, status: 'failed', rejectionReason: result.reason }));
+      } else {
+        alert(`✓ ${result.message}`);
+        setTrackingShipment((prev: any) => ({ ...prev, currentStep: result.currentStep, status: result.currentStep === 4 ? 'completed' : 'shipping' }));
+      }
+      fetchData();
+    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+    finally { setSaving(false); }
+  };
+
+  const handleConfirmReceived = async () => {
+    if (!trackingOrder) return;
+    setSaving(true);
+    try {
+      await shipmentService.confirmReceived(trackingOrder.id);
+      setTrackingShipment((prev: any) => ({ ...prev, currentStep: 4, status: 'completed' }));
+      alert('✓ Xác nhận giao hàng thành công!');
+      fetchData();
+    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+    finally { setSaving(false); }
+  };
+
+  const handleTrackingReject = async (reason: string) => {
+    if (!trackingOrder || !reason) { alert('Vui lòng chọn lý do'); return; }
+    setSaving(true);
+    try {
+      await shipmentService.customerReject(trackingOrder.id, reason);
+      setTrackingShipment((prev: any) => ({ ...prev, status: 'failed', rejectionReason: reason }));
+      alert('Đã xử lý từ chối của khách!');
+      fetchData();
+    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+    finally { setSaving(false); }
+  };
+
+  const handleAddCarrier = async () => {
+    if (!newCarrierName.trim() || !newCarrierCode.trim()) { alert('Vui lòng nhập đầy đủ thông tin'); return; }
+    setAddCarrierSaving(true);
+    try {
+      const res = await carrierService.create({ name: newCarrierName, code: newCarrierCode, autoPrefix: newCarrierCode.toUpperCase().slice(0, 3) });
+      const c = res.data as Carrier;
+      setCarriers(prev => [...prev, c]);
+      setSelectedCarrierId(c.id);
+      setShowAddCarrier(false);
+      setNewCarrierName('');
+      setNewCarrierCode('');
+    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi thêm ĐVVC'); }
+    finally { setAddCarrierSaving(false); }
+  };
+
+  const handleResolveNotif = async (n: Notification) => {
+    try { await notificationService.resolve(n.id); fetchData(); }
+    catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+  };
 
   return (
     <AppLayout>
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.96) translateY(10px) } to { opacity: 1; transform: scale(1) translateY(0) } }
+      `}</style>
+
       <div className="min-h-screen p-8 bg-gradient-to-br from-blue-50 via-slate-50 to-slate-100">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">Tiếp nhận giao hàng</h1>
-            <p className="text-slate-500 mt-1">Xem chi tiết đơn, điều phối hoặc từ chối giao hàng.</p>
+            <p className="text-slate-500 mt-1">Xem chi tiết đơn, điều phối vận chuyển hoặc theo dõi giao hàng.</p>
           </div>
           <button
             onClick={() => { setNotifModal(true); setActiveTab('notifications'); }}
@@ -294,38 +669,45 @@ export default function LogisticsPage() {
 
           {/* Tracking list */}
           {activeTab === 'tracking' && (
-            <div className="divide-y divide-slate-100">
+            <div>
               {loading ? (
                 <div className="text-center py-16 text-slate-400">Đang tải...</div>
-              ) : trackingOrders.length === 0 ? (
-                <div className="text-center py-16 text-slate-400">Không có đơn nào đang theo dõi.</div>
-              ) : trackingOrders.map(o => (
-                <div key={o.id} className="flex items-center gap-4 px-6 py-4 hover:bg-purple-50/30 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-black text-sm flex-shrink-0">
-                    {o.customer?.name?.[0] || '?'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono font-black text-blue-600 text-sm">{o.orderNo}</span>
-                      <StatusBadge status={o.status} />
+              ) : allTracking.length === 0 ? (
+                <div className="text-center py-16 text-slate-400">Chưa có đơn nào đang vận chuyển.</div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {allTracking.map(({ shipment, order }) => (
+                    <div key={shipment.id} className="flex items-center gap-4 px-6 py-4 hover:bg-purple-50/30 transition-colors">
+                      <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-black text-sm flex-shrink-0">
+                        {order?.customer?.name?.[0] || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-black text-blue-600 text-sm">{order?.orderNo}</span>
+                          <StatusBadge status={shipment.status} />
+                        </div>
+                        <p className="text-sm text-slate-600 mt-0.5 truncate">{order?.customer?.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {shipment.carrier?.name} · {shipment.trackingNo}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0 hidden sm:block">
+                        <p className="text-xs text-slate-500">Bước {shipment.currentStep + 1}/5</p>
+                        <div className="w-20 h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${shipment.status === 'completed' ? 'bg-green-500 w-full' : shipment.status === 'failed' ? 'bg-red-500 w-full' : 'bg-blue-500'}`}
+                            style={{ width: `${(shipment.currentStep / 4) * 100}%` }} />
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleOpenTracking(order)}
+                        className="flex-shrink-0 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-extrabold hover:bg-slate-50 hover:-translate-y-0.5 transition-all duration-150"
+                      >
+                        Chi tiết
+                      </button>
                     </div>
-                    <p className="text-sm text-slate-600 mt-0.5 truncate">{o.customer?.name}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0 hidden sm:block">
-                    <p className="text-sm font-semibold text-slate-800">{VND(totalAmount(o.items))}đ</p>
-                    <p className="text-xs text-slate-400">{totalQty(o.items)} sản phẩm</p>
-                  </div>
-                  <div className="text-right flex-shrink-0 hidden md:block">
-                    <p className="text-xs text-slate-500">{FMT_DATE(o.orderDate)}</p>
-                  </div>
-                  <button
-                    onClick={() => openDetail(o)}
-                    className="flex-shrink-0 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-extrabold hover:bg-slate-50 hover:-translate-y-0.5 transition-all duration-150"
-                  >
-                    Chi tiết
-                  </button>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -353,11 +735,9 @@ export default function LogisticsPage() {
               </button>
             </div>
 
-            {/* Step: view — chi tiết đơn */}
+            {/* Step: view */}
             {detailStep === 'view' && (
               <div className="px-7 py-5 space-y-5">
-
-                {/* Thông tin chung */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: 'Khách hàng', value: detailOrder.customer?.name },
@@ -372,7 +752,6 @@ export default function LogisticsPage() {
                   ))}
                 </div>
 
-                {/* Địa chỉ giao hàng */}
                 {detailOrder.note && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                     <p className="text-xs font-bold text-amber-600 mb-1">Địa chỉ / Ghi chú giao hàng</p>
@@ -386,35 +765,35 @@ export default function LogisticsPage() {
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Danh sách sản phẩm</p>
                   </div>
                   <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Sản phẩm</th>
-                        <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">SL</th>
-                        <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Đơn giá</th>
-                        <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Thành tiền</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {detailOrder.items?.map((item: any) => (
-                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-slate-800">{item.product?.name}</p>
-                            <p className="text-xs text-slate-400 font-mono">{item.product?.sku}</p>
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-800">{item.quantity}</td>
-                          <td className="px-4 py-3 text-right text-slate-600">{VND(Number(item.unitPrice || 0))}đ</td>
-                          <td className="px-4 py-3 text-right font-extrabold text-slate-900">{VND(item.quantity * Number(item.unitPrice || 0))}đ</td>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Sản phẩm</th>
+                          <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">SL</th>
+                          <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Đơn giá</th>
+                          <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Thành tiền</th>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-slate-50 border-t border-slate-200">
-                      <tr>
-                        <td colSpan={3} className="px-4 py-3 text-right font-extrabold text-slate-700 text-sm">Tổng cộng:</td>
-                        <td className="px-4 py-3 text-right font-black text-blue-600">{VND(totalAmount(detailOrder.items))}đ</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {detailOrder.items?.map((item: any) => (
+                          <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-slate-800">{item.product?.name}</p>
+                              <p className="text-xs text-slate-400 font-mono">{item.product?.sku}</p>
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-slate-800">{item.quantity}</td>
+                            <td className="px-4 py-3 text-right text-slate-600">{VND(Number(item.unitPrice || 0))}đ</td>
+                            <td className="px-4 py-3 text-right font-extrabold text-slate-900">{VND(item.quantity * Number(item.unitPrice || 0))}đ</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t border-slate-200">
+                        <tr>
+                          <td colSpan={3} className="px-4 py-3 text-right font-extrabold text-slate-700 text-sm">Tổng cộng:</td>
+                          <td className="px-4 py-3 text-right font-black text-blue-600">{VND(totalAmount(detailOrder.items))}đ</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 </div>
 
@@ -438,7 +817,7 @@ export default function LogisticsPage() {
               </div>
             )}
 
-            {/* Step: reject — lý do từ chối */}
+            {/* Step: reject */}
             {detailStep === 'reject' && (
               <div className="px-7 py-5 space-y-5">
                 <div>
@@ -448,9 +827,7 @@ export default function LogisticsPage() {
                     {REJECTION_REASONS.map(r => (
                       <button key={r} onClick={() => setRejectReason(r)}
                         className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all duration-150 ${
-                          rejectReason === r
-                            ? 'border-red-400 bg-red-50 shadow-sm'
-                            : 'border-slate-200 bg-white hover:border-red-300'
+                          rejectReason === r ? 'border-red-400 bg-red-50 shadow-sm' : 'border-slate-200 bg-white hover:border-red-300'
                         }`}>
                         <span className={`text-sm font-semibold ${rejectReason === r ? 'text-red-700' : 'text-slate-700'}`}>{r}</span>
                       </button>
@@ -496,19 +873,57 @@ export default function LogisticsPage() {
               <div className="px-7 py-5 space-y-5">
                 <div>
                   <p className="text-sm font-bold text-slate-700 mb-1">Chọn đơn vị vận chuyển <span className="text-red-500">*</span></p>
-                  <div className="relative">
-                    <select
-                      value={selectedCarrierId}
-                      onChange={e => setSelectedCarrierId(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all cursor-pointer appearance-none pr-10"
-                    >
-                      {carriers.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                      ))}
-                    </select>
-                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <div className="space-y-2">
+                    {carriers.map(c => (
+                      <button key={c.id} onClick={() => setSelectedCarrierId(c.id)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                          selectedCarrierId === c.id ? 'border-blue-400 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-300'
+                        }`}>
+                        <span className={`text-sm font-semibold ${selectedCarrierId === c.id ? 'text-blue-700' : 'text-slate-700'}`}>
+                          {c.name} <span className="font-mono text-slate-400">({c.code})</span>
+                        </span>
+                        <span className="ml-2 text-xs text-slate-400">Mã: {c.autoPrefix}-XXXXXX</span>
+                      </button>
+                    ))}
+                    <button onClick={() => setShowAddCarrier(true)}
+                      className="w-full text-left px-4 py-2.5 rounded-xl border border-dashed border-slate-300 bg-white hover:border-blue-300 hover:bg-blue-50 transition-all text-sm text-blue-600 font-semibold">
+                      + Thêm đơn vị vận chuyển mới
+                    </button>
                   </div>
                 </div>
+
+                {/* Thêm ĐVVC mới */}
+                {showAddCarrier && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-bold text-blue-700 uppercase">Thêm Đơn vị Vận chuyển mới</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Tên ĐVVC</label>
+                        <input value={newCarrierName} onChange={e => setNewCarrierName(e.target.value)}
+                          placeholder="VD: Giao Hàng Tiết Kiệm"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Tiền tố SKU</label>
+                        <input value={newCarrierCode} onChange={e => setNewCarrierCode(e.target.value.toUpperCase())}
+                          placeholder="VD: GHTK"
+                          maxLength={5}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 font-mono" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-blue-500">Mã vận đơn sẽ tự sinh: <span className="font-mono font-bold">{newCarrierCode.toUpperCase() || 'XXX'}-000001</span></p>
+                    <div className="flex gap-2">
+                      <button onClick={handleAddCarrier} disabled={addCarrierSaving}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-60 cursor-pointer">
+                        {addCarrierSaving ? 'Đang thêm...' : '✓ Thêm'}
+                      </button>
+                      <button onClick={() => setShowAddCarrier(false)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-bold hover:bg-slate-50 cursor-pointer">
+                        Hủy
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">Phí vận chuyển (VNĐ)</label>
@@ -521,11 +936,11 @@ export default function LogisticsPage() {
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">đ</span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">Mã vận đơn sẽ được tạo tự động khi nhấn xác nhận.</p>
+                  <p className="text-xs text-slate-400 mt-1">Mã vận đơn sẽ được tạo tự động khi nhấn xác nhận điều phối.</p>
                 </div>
 
                 <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
-                  <strong>Kết quả:</strong> Đơn sẽ chuyển sang trạng thái <strong>"Kho đang xử lý"</strong>. Kho sẽ nhận đơn và tiến hành đóng gói, xuất hàng.
+                  <strong>Kết quả:</strong> Đơn sẽ chuyển sang trạng thái <strong>"Kho đang xử lý"</strong>. Kho sẽ nhận đơn, xuất hàng và giao cho đơn vị vận chuyển. Mã vận đơn tự động sinh theo tiền tố ĐVVC.
                 </div>
 
                 <div className="flex gap-3 pt-2">
@@ -545,6 +960,29 @@ export default function LogisticsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ===== TRACKING MODAL ===== */}
+      {trackingOrder && trackingShipment && (
+        <TrackingModal
+          order={trackingOrder}
+          shipment={trackingShipment}
+          carriers={carriers}
+          onClose={() => { setTrackingOrder(null); setTrackingShipment(null); }}
+          onAdvance={handleAdvance}
+          onSimulate={handleSimulate}
+          onConfirm={handleConfirmReceived}
+          onReject={handleTrackingReject}
+          onAddCarrier={(name, code) => { setNewCarrierName(name); setNewCarrierCode(code); setShowAddCarrier(true); }}
+          saving={saving}
+          rejectReason={trackingRejectReason}
+          setRejectReason={setTrackingRejectReason}
+          rejectNote={trackingRejectNote}
+          setRejectNote={setTrackingRejectNote}
+          detailStep={trackingStep}
+          setDetailStep={setTrackingStep}
+          totalAmount={totalAmount}
+        />
       )}
 
       {/* ===== MODAL THÔNG BÁO ===== */}
@@ -593,11 +1031,6 @@ export default function LogisticsPage() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-        @keyframes scaleIn { from { opacity: 0; transform: scale(0.96) translateY(10px) } to { opacity: 1; transform: scale(1) translateY(0) } }
-      `}</style>
     </AppLayout>
   );
 }

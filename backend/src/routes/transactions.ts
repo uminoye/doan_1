@@ -32,6 +32,8 @@ router.get('/shipments/steps', shipmentController.getSteps);
 router.get('/shipments/rejection-reasons', shipmentController.getRejectionReasons);
 router.get('/shipments/:salesOrderId', shipmentController.getByOrderId);
 router.post('/shipments', authorize('admin', 'logistics'), shipmentController.create);
+router.post('/shipments/create-and-forward', authorize('admin', 'logistics'), shipmentController.createAndForward);
+router.post('/shipments/:salesOrderId/simulate-delivery', authorize('admin', 'logistics'), shipmentController.simulateDelivery);
 router.post('/shipments/:salesOrderId/advance', authorize('admin', 'logistics'), shipmentController.advanceStep);
 router.post('/shipments/:salesOrderId/confirm-received', authorize('admin', 'logistics'), shipmentController.confirmReceived);
 router.post('/shipments/:salesOrderId/customer-reject', authorize('admin', 'logistics'), shipmentController.customerReject);

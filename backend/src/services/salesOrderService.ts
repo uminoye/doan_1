@@ -110,8 +110,9 @@ export class SalesOrderService {
   }) {
     const order = await prisma.salesOrder.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (!['pending', 'logistics_rejected', 'warehouse_rejected', 'warehouse_delayed'].includes(order.status)) {
-      throw new Error('Chỉ có thể sửa đơn ở trạng thái chờ duyệt hoặc bị từ chối / dời ngày');
+    // Chỉ được sửa khi Logistics CHƯA xác nhận (chưa chuyển sang kho xử lý)
+    if (!['pending', 'logistics_rejected'].includes(order.status)) {
+      throw new AppError(400, 'Chỉ có thể sửa đơn ở trạng thái chờ duyệt hoặc bị từ chối bởi Logistics');
     }
     if (!data.items || data.items.length === 0) {
       throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');

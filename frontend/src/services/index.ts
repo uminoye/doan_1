@@ -302,8 +302,14 @@ export const shipmentService = {
   create(data: { salesOrderId: string; carrierId: string; trackingNo: string; shippingFee?: number }) {
     return api.post('/transactions/shipments', data);
   },
+  createAndForward(data: { salesOrderId: string; carrierId: string; shippingFee?: number; note?: string }) {
+    return api.post('/transactions/shipments/create-and-forward', data);
+  },
   advanceStep(salesOrderId: string) {
     return api.post(`/transactions/shipments/${salesOrderId}/advance`);
+  },
+  simulateDelivery(salesOrderId: string) {
+    return api.post(`/transactions/shipments/${salesOrderId}/simulate-delivery`);
   },
   confirmReceived(salesOrderId: string) {
     return api.post(`/transactions/shipments/${salesOrderId}/confirm-received`);

@@ -282,4 +282,107 @@ export class ShipmentService {
     ]);
     return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
+
+  /**
+   * GIAI ĐOẠN 2: Logistics điều phối — gộp 2 bước:
+   * 1. forwardToWarehouse (đơn chuyển sang warehouse_processing)
+   * 2. Tạo Shipment với carrier + trackingNo tự sinh + shippingFee
+   */
+  async createAndForward(data: {
+    salesOrderId: string;
+    carrierId: string;
+    shippingFee?: number;
+    note?: string;
+    userName?: string;
+  }) {
+    const order = await prisma.salesOrder.findUnique({ where: { id: data.salesOrderId } });
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (!['pending', 'logistics_review'].includes(order.status)) {
+      throw new AppError(400, 'Đơn phải ở trạng thái chờ duyệt hoặc logistics xem xét lại');
+    }
+
+    // Lấy carrier để sinh trackingNo
+    const carrier = await prisma.carrier.findUnique({ where: { id: data.carrierId } });
+    if (!carrier) throw new AppError(404, 'Không tìm thấy đơn vị vận chuyển');
+
+    // Sinh trackingNo tự động: VTP-001234
+    const count = await prisma.shipment.count({ where: { carrierId: data.carrierId } });
+    const trackingNo = `${carrier.autoPrefix || carrier.code}-${String(count + 1).padStart(6, '0')}`;
+
+    await prisma.$transaction(async (tx) => {
+      // Bước 1: Upsert deliveryRequest + chuyển đơn sang warehouse_processing
+      await tx.deliveryRequest.upsert({
+        where: { salesOrderId: data.salesOrderId },
+        create: {
+          salesOrderId: data.salesOrderId,
+          receivedBy: data.userName,
+          receivedAt: new Date(),
+          note: data.note,
+          status: 'warehouse_processing',
+        },
+        update: {
+          status: 'warehouse_processing',
+          note: data.note,
+          receivedAt: new Date(),
+        },
+      });
+
+      await tx.salesOrder.update({
+        where: { id: data.salesOrderId },
+        data: { status: 'warehouse_processing' },
+      });
+
+      // Bước 2: Tạo shipment
+      await tx.shipment.create({
+        data: {
+          salesOrderId: data.salesOrderId,
+          carrierId: data.carrierId,
+          trackingNo,
+          shippingFee: data.shippingFee || 0,
+          currentStep: 0,
+          status: 'warehouse_processing',
+        },
+      });
+    });
+
+    return {
+      message: 'Đã điều phối và tạo lộ trình vận chuyển thành công! Đơn đã chuyển sang kho xử lý.',
+      trackingNo,
+      carrier: carrier.name,
+    };
+  }
+
+  /**
+   * GIAI ĐOẠN 4: Simulation — Logistics bấm "Giao thử"
+   * Logic:
+   *  - step 0→1→2→3: luôn advanceStep bình thường
+   *  - step 3→4: 80% thành công, 20% random KHÁCH TỪ CHỐI
+   *    → 3 lý do ngẫu nhiên trong REJECTION_REASONS
+   */
+  async simulateDelivery(salesOrderId: string) {
+    const shipment = await prisma.shipment.findUnique({ where: { salesOrderId } });
+    if (!shipment) throw new AppError(404, 'Không tìm thấy lộ trình vận chuyển');
+    if (shipment.status === 'completed') {
+      return { message: 'Đơn đã giao thành công', currentStep: shipment.currentStep };
+    }
+    if (shipment.status === 'failed') {
+      return { message: 'Đơn đã bị từ chối trước đó', currentStep: shipment.currentStep };
+    }
+
+    // Step 0→1→2→3: advance bình thường
+    if (shipment.currentStep < 3) {
+      return this.advanceStep(salesOrderId);
+    }
+
+    // Step 3→4: random 20% KHÁCH TỪ CHỐI
+    const roll = Math.random();
+    if (roll < 0.2) {
+      const reasonIdx = Math.floor(Math.random() * REJECTION_REASONS.length);
+      const reason = REJECTION_REASONS[reasonIdx];
+      return this.customerReject(salesOrderId, reason);
+    }
+
+    // 80%: giao thành công
+    return this.advanceStep(salesOrderId);
+  }
 }
