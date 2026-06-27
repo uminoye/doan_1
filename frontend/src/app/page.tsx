@@ -65,9 +65,10 @@ export default function DashboardPage() {
         {/* Stats cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 18, marginBottom: 24 }}>
           {cards.map((card, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 18, padding: '22px 22px 18px', boxShadow: '0 4px 20px rgba(15,23,42,0.06)', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden', transition: 'transform 180ms ease, box-shadow 180ms ease', cursor: 'default' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = `0 8px 30px ${card.shadow}`; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(15,23,42,0.06)'; }}>
+            <div key={i}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = card.shadow; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(15,23,42,0.06)'; }}
+              style={{ background: '#fff', borderRadius: 18, padding: '22px 22px 18px', boxShadow: '0 4px 20px rgba(15,23,42,0.06)', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden', transition: 'transform 180ms ease, box-shadow 180ms ease', cursor: 'default' }}>
               <div style={{ width: 40, height: 40, borderRadius: 12, background: card.bg, display: 'grid', placeItems: 'center', marginBottom: 14 }}>
                 <i className={card.icon} style={{ fontSize: 18, color: card.color }} />
               </div>
@@ -97,7 +98,7 @@ export default function DashboardPage() {
             ) : data?.recent_orders?.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {data.recent_orders.map((o: any) => (
-                  <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderRadius: 14, border: '1px solid #f1f5f9', background: '#fafbfc', transition: 'border-color 180ms', onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'} onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#f1f5f9' }}>
+                  <div key={o.id} className="order-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderRadius: 14, border: '1px solid #f1f5f9', background: '#fafbfc' }}>
                     <div>
                       <span style={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{o.order_no}</span>
                       <span style={{ color: '#64748b', fontSize: 13, marginLeft: 10 }}>{o.customer_name}</span>
@@ -136,7 +137,7 @@ export default function DashboardPage() {
             ) : data?.recent_inbound?.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {data.recent_inbound.map((r: any) => (
-                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderRadius: 14, border: '1px solid #f1f5f9', background: '#fafbfc', transition: 'border-color 180ms', onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'} onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#f1f5f9' }}>
+                  <div key={r.id} className="order-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderRadius: 14, border: '1px solid #f1f5f9', background: '#fafbfc' }}>
                     <div>
                       <span style={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>{r.receipt_no}</span>
                       <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{r.warehouse_name}</div>
@@ -160,6 +161,8 @@ export default function DashboardPage() {
       </div>
 
       <style>{`
+        .order-row { transition: border-color 180ms; cursor: default; }
+        .order-row:hover { border-color: #e2e8f0 !important; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
