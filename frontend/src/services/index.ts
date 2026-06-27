@@ -201,6 +201,9 @@ export const salesOrderService = {
   confirmDelay(salesOrderId: string) {
     return api.post(`/transactions/sales-orders/${salesOrderId}/confirm-delay`);
   },
+  resendToWarehouse(salesOrderId: string, newExpectedDate: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/resend-to-warehouse`, { newExpectedDate });
+  },
   recreate(data: {
     warehouseRejectedOrderId: string;
     customerId: string;

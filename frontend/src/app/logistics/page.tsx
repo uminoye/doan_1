@@ -223,54 +223,77 @@ function TrackingModal({
             </div>
           )}
 
-          {/* Hành động */}
+          {/* Hành động theo step */}
           {!isCompleted && !isFailed && (
             <div className="space-y-3">
-              {detailStep === 'view' ? (
-                <div className="space-y-2">
-                  {isShipping && step < 4 && (
-                    <div className="flex gap-3">
-                      <button
-                        onClick={onSimulate}
-                        disabled={saving}
-                        className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-purple-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                      >
-                        {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
-                        🎲 Giao thử (80% thành công / 20% từ chối)
-                      </button>
-                      <button
-                        onClick={onAdvance}
-                        disabled={saving}
-                        className="px-5 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                      >
-                        Tiến bước →
-                      </button>
-                    </div>
-                  )}
+
+              {/* Step 0–2: Tiến bước */}
+              {step >= 0 && step <= 2 && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={onAdvance}
+                    disabled={saving}
+                    className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                  >
+                    {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                    Tiến bước → {SHIPMENT_STEP_LABELS[(step + 1) as keyof typeof SHIPMENT_STEP_LABELS]}
+                  </button>
+                </div>
+              )}
+
+              {/* Step 3 — ĐANG GIAO: BOM / HƯ / Giao thử */}
+              {step === 3 && (
+                <div className="space-y-3">
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-700 text-center">
+                    📦 Hàng đang trên đường giao — Tại bước này có <strong>20% rủi ro khách BOM</strong> hoặc <strong>hư đơn do vận chuyển</strong>
+                  </div>
                   <div className="flex gap-3">
+                    {/* BOM — Khách từ chối */}
                     <button
                       onClick={() => { setDetailStep('reject'); setRejectReason(''); setRejectNote(''); }}
-                      className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer"
+                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 cursor-pointer"
                     >
-                      ✗ Xử lý từ chối
+                      <span className="text-base">✗</span>
+                      <span>BOM</span>
                     </button>
-                    {isShipping && step === 3 && (
-                      <button
-                        onClick={onConfirm}
-                        disabled={saving}
-                        className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                      >
-                        ✓ Xác nhận giao thành công
-                      </button>
-                    )}
+                    {/* HƯ — Hàng bị hư */}
+                    <button
+                      onClick={() => { setRejectReason('Hàng bể vỡ do vận chuyển'); onReject('Hàng bể vỡ do vận chuyển'); }}
+                      disabled={saving}
+                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-400 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      <span className="text-base">⚠</span>
+                      <span>HƯ</span>
+                    </button>
+                    {/* Giao thử */}
+                    <button
+                      onClick={onSimulate}
+                      disabled={saving}
+                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-purple-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : <span className="text-base">🎲</span>}
+                      <span>Giao thử</span>
+                    </button>
                   </div>
-                  <p className="text-xs text-center text-slate-400">
-                    Bước {step + 1}/5 — {SHIPMENT_STEP_LABELS[step as keyof typeof SHIPMENT_STEP_LABELS] || '—'}
-                  </p>
+                  <button
+                    onClick={onConfirm}
+                    disabled={saving}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                  >
+                    {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                    ✓ Xác nhận giao thành công
+                  </button>
                 </div>
-              ) : (
+              )}
+
+              <p className="text-xs text-center text-slate-400">
+                Bước {step + 1}/5 — {SHIPMENT_STEP_LABELS[step as keyof typeof SHIPMENT_STEP_LABELS] || '—'}
+              </p>
+
+              {/* Reject reason picker */}
+              {detailStep === 'reject' && (
                 <div className="space-y-4">
-                  <p className="text-sm font-bold text-slate-700">Chọn lý do khách từ chối:</p>
+                  <p className="text-sm font-bold text-slate-700">Chọn lý do khách từ chối / hoàn hàng:</p>
                   <div className="space-y-2">
                     {REJECTION_REASONS.map(r => (
                       <button key={r} onClick={() => setRejectReason(r)}
@@ -283,8 +306,8 @@ function TrackingModal({
                   </div>
                   {(rejectReason === REJECTION_NOTE || rejectReason.includes('khác')) && (
                     <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={2}
-                      placeholder="VD: Địa chỉ 123 Nguyễn Trãi nhưng không có ai nhận..."
-                      className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 resize-none" />
+                      placeholder="Mô tả chi tiết..."
+                      className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-red-200 resize-none" />
                   )}
                   <div className="flex gap-3">
                     <button onClick={() => setDetailStep('view')}
@@ -305,17 +328,68 @@ function TrackingModal({
             </div>
           )}
 
+          {/* HOÀN THÀNH: Khách đã trả tiền / Hoàn hàng */}
           {isCompleted && (
-            <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 text-center">
-              <p className="text-green-700 font-extrabold text-lg">✓ Giao hàng thành công!</p>
-              <p className="text-green-600 text-sm mt-1">Cảm ơn quý khách đã mua sắm tại WMS.</p>
+            <div className="space-y-3">
+              <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 text-center">
+                <p className="text-green-700 font-extrabold text-lg">✓ Giao hàng thành công!</p>
+                <p className="text-green-600 text-sm mt-1">Cảm ơn quý khách đã mua sắm tại WMS.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={onConfirm}
+                  className="py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  💰 Khách đã trả tiền
+                </button>
+                <button
+                  onClick={() => { setDetailStep('reject'); setRejectReason(''); setRejectNote(''); }}
+                  className="py-3.5 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  ↩ Khách hoàn hàng
+                </button>
+              </div>
+              {detailStep === 'reject' && (
+                <div className="space-y-4">
+                  <p className="text-sm font-bold text-red-700">Chọn lý do hoàn hàng:</p>
+                  <div className="space-y-2">
+                    {REJECTION_REASONS.map(r => (
+                      <button key={r} onClick={() => setRejectReason(r)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                          rejectReason === r ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white hover:border-red-300'
+                        }`}>
+                        <span className={`text-sm font-semibold ${rejectReason === r ? 'text-red-700' : 'text-slate-700'}`}>{r}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {(rejectReason === REJECTION_NOTE || rejectReason.includes('khác')) && (
+                    <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={2}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-red-200 resize-none"
+                      placeholder="Mô tả chi tiết..." />
+                  )}
+                  <div className="flex gap-3">
+                    <button onClick={() => setDetailStep('view')}
+                      className="px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 cursor-pointer">
+                      ← Quay lại
+                    </button>
+                    <button
+                      onClick={() => onReject(rejectReason)}
+                      disabled={!rejectReason || saving}
+                      className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-sm shadow-md disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                      Xác nhận hoàn hàng
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {isFailed && (
             <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 text-center">
               <p className="text-red-700 font-extrabold text-lg">✗ Giao hàng thất bại</p>
-              <p className="text-red-600 text-sm mt-1">Xem lý do từ chối bên trên.</p>
+              <p className="text-red-600 text-sm mt-1">Xem lý do từ chối ở trên. Hệ thống đã tự xử lý theo quy trình.</p>
             </div>
           )}
         </div>

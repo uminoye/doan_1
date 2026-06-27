@@ -114,6 +114,10 @@ export const salesOrderController = {
   confirmDelay: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.confirmDelay(String(req.params.id)));
   }),
+  resendToWarehouse: asyncHandler(async (req: Request, res: Response) => {
+    const { newExpectedDate } = req.body;
+    res.json(await salesOrderService.resendToWarehouse(String(req.params.id), newExpectedDate));
+  }),
   recreateOrder: asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId;
     res.status(201).json(await salesOrderService.recreateOrder(String(req.params.id), { ...req.body, createdById: userId }));

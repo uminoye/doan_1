@@ -51,6 +51,7 @@ router.post('/sales-orders/:id/return-inventory', authorize('admin', 'logistics'
 router.post('/sales-orders/:id/warehouse-reject', authorize('admin', 'warehouse'), salesOrderController.warehouseReject);
 router.post('/sales-orders/:id/warehouse-delay', authorize('admin', 'warehouse'), salesOrderController.warehouseDelay);
 router.post('/sales-orders/:id/confirm-delay', authorize('admin', 'sales'), salesOrderController.confirmDelay);
+router.post('/sales-orders/:id/resend-to-warehouse', authorize('admin', 'sales'), salesOrderController.resendToWarehouse);
 router.post('/sales-orders/:id/recreate', authorize('admin', 'sales'), salesOrderController.recreateOrder);
 router.delete('/sales-orders/:id', authorize('admin', 'sales'), salesOrderController.delete);
 

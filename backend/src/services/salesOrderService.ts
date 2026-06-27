@@ -419,6 +419,39 @@ export class SalesOrderService {
     return { message: 'Đơn đã quay về trạng thái chờ duyệt. Logistics sẽ xử lý lại.' };
   }
 
+  /**
+   * Sale chọn Lựa chọn 2: Dời ngày gửi THẲNG về Kho (không qua Logistics).
+   * Trạng thái: warehouse_rejected → warehouse_delayed
+   */
+  async resendToWarehouse(salesOrderId: string, newExpectedDate: string) {
+    const order = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'warehouse_rejected' && order.status !== 'warehouse_delayed') {
+      throw new AppError(400, 'Chỉ áp dụng cho đơn bị Kho từ chối hoặc dời ngày');
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: {
+          status: 'warehouse_delayed',
+          expectedDeliveryDate: new Date(newExpectedDate),
+          note: `[SALE DỜI NGÀY] Gửi lại kho xác nhận giao ngày ${newExpectedDate}. (Không qua Logistics)`,
+        },
+      });
+      await tx.deliveryRequest.updateMany({
+        where: { salesOrderId },
+        data: { status: 'warehouse_delayed' },
+      });
+      await tx.stockOutboundNote.updateMany({
+        where: { salesOrderId },
+        data: { status: 'delayed' },
+      });
+    });
+
+    return { message: `Đã cập nhật ngày giao: ${newExpectedDate}. Đơn gửi thẳng về Kho để xác nhận giao lại.` };
+  }
+
   /** Sale lập lại đơn
    * - pending        → update đơn hiện tại (giữ orderNo cũ)
    * - warehouse_*    → xóa đơn cũ, tạo đơn mới với orderNo mới */

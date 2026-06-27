@@ -5,7 +5,7 @@ import { Card, Modal, Pagination, EmptyState } from '@/components/ui/Misc';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
-import { stockOutboundService, warehouseService } from '@/services';
+import { stockOutboundService, warehouseService, salesOrderService } from '@/services';
 import {
   StockOutboundNote,
   Warehouse,
@@ -20,30 +20,30 @@ type TabKey = 'outbound' | 'pending';
 
 const STATUS_STYLE = (status: string) => {
   const map: Record<string, { bg: string; color: string; label: string }> = {
-    warehouse_processing: { bg: '#dbeafe', color: '#1d4ed8', label: 'Kho đang xuất' },
-    warehouse_rejected:  { bg: '#fee2e2', color: '#b91c1c', label: 'Kho từ chối' },
-    warehouse_delayed:   { bg: '#fef3c7', color: '#92400e', label: 'Dời ngày' },
-    shipping:            { bg: '#f3e8ff', color: '#6b21a8', label: 'Đang giao' },
-    logistics_review:    { bg: '#ede9fe', color: '#6d28d9', label: 'Logistics duyệt' },
-    returned:            { bg: '#fee2e2', color: '#b91c1c', label: 'Hoàn trả' },
-    completed:           { bg: '#d1fae5', color: '#047857', label: 'Hoàn thành' },
-    canceled:            { bg: '#f3f4f6', color: '#4b5563', label: 'Đã hủy' },
+    pending:               { bg: '#fef3c7', color: '#92400e', label: 'Chờ duyệt' },
+    logistics_rejected:   { bg: '#fee2e2', color: '#b91c1c', label: 'Logistics từ chối' },
+    warehouse_processing:  { bg: '#dbeafe', color: '#1d4ed8', label: 'Kho đang xuất' },
+    warehouse_rejected:   { bg: '#fee2e2', color: '#b91c1c', label: 'Kho từ chối' },
+    warehouse_delayed:    { bg: '#fef3c7', color: '#92400e', label: 'Dời ngày' },
+    shipping:             { bg: '#f3e8ff', color: '#6b21a8', label: 'Đang giao' },
+    completed:            { bg: '#d1fae5', color: '#047857', label: 'Hoàn thành' },
+    returned:             { bg: '#fee2e2', color: '#b91c1c', label: 'Hoàn trả' },
+    canceled:             { bg: '#f3f4f6', color: '#4b5563', label: 'Đã hủy' },
   };
   return map[status] || { bg: '#f3f4f6', color: '#374151', label: status || 'N/A' };
 };
 
-const STATUS_FILTER_OPTIONS = [
-  { value: '', label: 'Tất cả trạng thái' },
-  { value: 'warehouse_processing', label: 'Kho đang xuất' },
-  { value: 'shipping', label: 'Đang giao' },
-  { value: 'logistics_review', label: 'Logistics duyệt' },
-  { value: 'completed', label: 'Hoàn thành' },
-  { value: 'returned', label: 'Bị từ chối' },
-  { value: 'canceled', label: 'Đã hủy' },
+const WAREHOUSE_REJECT_REASONS = [
+  'Hết hàng trong kho, cần đặt thêm từ nhà máy',
+  'Sản phẩm bị lỗi từ nhà máy, chờ kiểm tra lại',
+  'Thông tin đơn hàng không rõ ràng (thiếu địa chỉ giao hàng)',
+  'Số lượng yêu cầu vượt quá tồn kho hiện tại',
+  'Kho đang bảo trì, tạm ngừng xuất hàng',
+  'Lý do khác (ghi rõ bên dưới)',
 ];
 
-function SkeletonRows({ cols = 8, rows = 6 }: { cols?: number; rows?: number }) {
-  const widths = [120, 100, 140, 120, 90, 70, 80, 100];
+function SkeletonRows({ cols = 7, rows = 6 }: { cols?: number; rows?: number }) {
+  const widths = [120, 160, 100, 110, 70, 120, 90];
   return (
     <>
       {Array.from({ length: rows }).map((_, i) => (
@@ -66,8 +66,225 @@ function SkeletonRows({ cols = 8, rows = 6 }: { cols?: number; rows?: number }) 
   );
 }
 
+const VND = new Intl.NumberFormat('vi-VN').format;
+const FMT_DATE = (v: string) => v ? dayjs(v).format('DD/MM/YYYY') : '—';
+
+// ── Reject modal (Gửi về Sale + 3 lựa chọn) ────────────────────────
+function WarehouseRejectModal({
+  order,
+  onClose,
+  onSubmit,
+  saving,
+}: {
+  order: SalesOrder;
+  onClose: () => void;
+  onSubmit: (reason: string) => void;
+  saving: boolean;
+}) {
+  const [reason, setReason] = useState('');
+  const [customReason, setCustomReason] = useState('');
+
+  const fullReason = reason === 'Lý do khác (ghi rõ bên dưới)' ? customReason.trim() : reason;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      style={{ animation: 'fadeIn 180ms ease-out' }}>
+      <div className="bg-white rounded-3xl border border-red-200 w-full max-w-lg shadow-2xl"
+        style={{ animation: 'scaleIn 220ms ease-out' }}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-7 py-5 border-b border-red-100">
+          <div>
+            <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold mb-2">
+              KHO TỪ CHỐI — BÁO SALE
+            </span>
+            <h3 className="text-xl font-black text-slate-900">{order.orderNo}</h3>
+            <p className="text-sm text-slate-500 mt-0.5">{order.customer?.name}</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
+            ×
+          </button>
+        </div>
+
+        {/* Info */}
+        <div className="px-7 py-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
+            </svg>
+            <span>Kho không thể xuất hàng. Lý do sẽ được gửi về cho <strong>Sale</strong> xem xét. Logistics sẽ thấy trạng thái "Kho từ chối".</span>
+          </div>
+        </div>
+
+        {/* Reason */}
+        <div className="px-7 pb-4 space-y-3">
+          <p className="text-sm font-bold text-slate-700">Chọn lý do từ chối <span className="text-red-500">*</span></p>
+          <div className="space-y-2 max-h-52 overflow-y-auto">
+            {WAREHOUSE_REJECT_REASONS.map(r => (
+              <button key={r} onClick={() => setReason(r)}
+                className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                  reason === r ? 'border-red-400 bg-red-50 shadow-sm' : 'border-slate-200 bg-white hover:border-red-300'
+                }`}>
+                <span className={`text-sm font-medium ${reason === r ? 'text-red-700' : 'text-slate-700'}`}>{r}</span>
+              </button>
+            ))}
+          </div>
+
+          {reason === 'Lý do khác (ghi rõ bên dưới)' && (
+            <textarea
+              value={customReason}
+              onChange={e => setCustomReason(e.target.value)}
+              rows={2}
+              placeholder="VD: Nhà cung cấp giao trễ, chưa nhập kho..."
+              className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 resize-none"
+            />
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="px-7 pb-7 flex gap-3">
+          <Button variant="outline" onClick={onClose} className="flex-1">Hủy</Button>
+          <Button
+            onClick={() => onSubmit(fullReason)}
+            disabled={!fullReason || saving}
+            loading={saving}
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+          >
+            Gửi từ chối về Sale
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sale Side: Rejected Order Modal (3 choices) ────────────────────
+function SaleRejectedOrderModal({
+  order,
+  onClose,
+  onDelete,
+  onDelayToWarehouse,
+  onRecreate,
+  saving,
+  action,
+}: {
+  order: SalesOrder;
+  onClose: () => void;
+  onDelete: () => void;
+  onDelayToWarehouse: (newDate: string) => void;
+  onRecreate: () => void;
+  saving: boolean;
+  action: 'view' | 'delay';
+}) {
+  const [newDate, setNewDate] = useState(dayjs().add(3, 'day').format('YYYY-MM-DD'));
+
+  const rejectNote = order.note || '';
+  const isWarehouseRejected = order.status === 'warehouse_rejected';
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      style={{ animation: 'fadeIn 180ms ease-out' }}>
+      <div className="bg-white rounded-3xl border border-amber-200 w-full max-w-lg shadow-2xl"
+        style={{ animation: 'scaleIn 220ms ease-out' }}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-7 py-5 border-b border-amber-100">
+          <div>
+            <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-extrabold mb-2">
+              KHO TỪ CHỐI — CHỜ SALE XỬ LÝ
+            </span>
+            <h3 className="text-xl font-black text-slate-900">{order.orderNo}</h3>
+            <p className="text-sm text-slate-500 mt-0.5">{order.customer?.name}</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
+            ×
+          </button>
+        </div>
+
+        {/* Rejection reason */}
+        {rejectNote && (
+          <div className="px-7 py-4">
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+              <p className="text-xs font-bold text-red-600 mb-1">LÝ DO KHO TỪ CHỐI</p>
+              <p className="font-medium">{rejectNote}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 3 Choices */}
+        {action === 'view' && isWarehouseRejected && (
+          <div className="px-7 pb-6 space-y-4">
+            <p className="text-sm font-bold text-slate-700">Chọn hành động xử lý:</p>
+
+            {/* Lựa chọn 1: Xóa đơn */}
+            <button onClick={onDelete} disabled={saving}
+              className="w-full text-left border-2 border-red-200 rounded-2xl p-4 hover:border-red-400 hover:bg-red-50 transition-all">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-black flex-shrink-0">1</div>
+                <div>
+                  <p className="font-extrabold text-red-700 text-sm">Xóa đơn hàng này</p>
+                  <p className="text-xs text-red-500 mt-0.5">Đơn sẽ bị hủy hoàn toàn. Có thể tạo đơn mới cho khách.</p>
+                </div>
+              </div>
+            </button>
+
+                {/* Lựa chọn 2: Dời ngày gửi thẳng về Kho */}
+                <button onClick={() => setSaleAction('delay')} disabled={saving}
+                  className="w-full text-left border-2 border-amber-200 rounded-2xl p-4 hover:border-amber-400 hover:bg-amber-50 transition-all">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-sm font-black flex-shrink-0">2</div>
+                    <div>
+                      <p className="font-extrabold text-amber-700 text-sm">Dời ngày giao — Gửi thẳng cho Kho</p>
+                      <p className="text-xs text-amber-500 mt-0.5">Cập nhật ngày giao mới. Đơn gửi lại kho mà <strong>không qua Logistics</strong>. Kho sẽ xác nhận giao lại.</p>
+                    </div>
+                  </div>
+                </button>
+
+            {/* Lựa chọn 3: Tạo đơn mới */}
+            <button onClick={onRecreate} disabled={saving}
+              className="w-full text-left border-2 border-blue-200 rounded-2xl p-4 hover:border-blue-400 hover:bg-blue-50 transition-all">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-black flex-shrink-0">3</div>
+                <div>
+                  <p className="font-extrabold text-blue-700 text-sm">Tạo đơn mới</p>
+                  <p className="text-xs text-blue-500 mt-0.5">Xóa đơn cũ và tạo đơn mới, quy trình bắt đầu lại từ đầu.</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* Action 2: Delay form */}
+        {action === 'delay' && isWarehouseRejected && (
+          <div className="px-7 pb-6 space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+              <strong>Lựa chọn 2:</strong> Cập nhật ngày giao mới. Đơn sẽ gửi thẳng về Kho (không qua Logistics) với trạng thái <strong>"Dời ngày"</strong>. Kho xác nhận lại để giao.
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Ngày giao dự kiến mới <span className="text-red-500">*</span></label>
+              <Input
+                type="date"
+                value={newDate}
+                onChange={e => setNewDate(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={onClose} className="flex-1">Hủy</Button>
+              <Button
+                onClick={() => onDelayToWarehouse(newDate)}
+                loading={saving}
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                Gửi dời ngày về Kho
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────
 export default function WarehouseOutboundPage() {
-  // ── Tabs ──────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabKey>('outbound');
 
   // ── Outbound list ─────────────────────────────────────────────
@@ -76,16 +293,14 @@ export default function WarehouseOutboundPage() {
   const [outboundLoading, setOutboundLoading] = useState(true);
   const [outboundSearch, setOutboundSearch] = useState('');
   const [outboundStatus, setOutboundStatus] = useState('');
-  const [outboundWarehouse, setOutboundWarehouse] = useState('');
 
   // ── Pending list ─────────────────────────────────────────────
   const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
   const [pendingLoading, setPendingLoading] = useState(true);
   const [pendingPage, setPendingPage] = useState(1);
   const [pendingSearch, setPendingSearch] = useState('');
-  const [pendingStatus, setPendingStatus] = useState('');
 
-  // ── Global refs ──────────────────────────────────────────────
+  // ── Global ────────────────────────────────────────────────────
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
   // ── Modals ───────────────────────────────────────────────────
@@ -93,19 +308,23 @@ export default function WarehouseOutboundPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRespondModal, setShowRespondModal] = useState(false);
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
+  const [showSaleActionModal, setShowSaleActionModal] = useState(false);
 
-  // ── Current item ─────────────────────────────────────────────
+  // ── Current items ────────────────────────────────────────────
   const [selectedNote, setSelectedNote] = useState<StockOutboundNote | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
   const [orderDetailData, setOrderDetailData] = useState<SalesOrder | null>(null);
 
-  // ── Forms ─────────────────────────────────────────────────────
+  // ── Forms ────────────────────────────────────────────────────
   const [createForm, setCreateForm] = useState({ warehouseId: '', exportDate: dayjs().format('YYYY-MM-DD'), note: '' });
-  const [respondForm, setRespondForm] = useState({ action: 'reject' as 'reject' | 'delay', reason: '', expectedDate: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
-  // ── Load warehouses ────────────────────────────────────────────
+  // Sale action modal
+  const [saleAction, setSaleAction] = useState<'view' | 'delay'>('view');
+
+  // ── Load data ─────────────────────────────────────────────────
   const loadWarehouses = useCallback(async () => {
     try {
       const res = await warehouseService.getAll();
@@ -114,26 +333,19 @@ export default function WarehouseOutboundPage() {
     } catch (e) { console.error(e); }
   }, []);
 
-  // ── Load outbound list ─────────────────────────────────────────
   const loadOutbound = useCallback(async (showLoading = false) => {
     if (showLoading) setOutboundLoading(true);
     try {
-      const res = await stockOutboundService.getAll({
-        page: outboundPage,
-        limit: 10,
-        status: outboundStatus || undefined,
-      });
+      const res = await stockOutboundService.getAll({ page: outboundPage, limit: 10, status: outboundStatus || undefined });
       setOutboundData(res.data);
     } catch (e) { console.error(e); }
     finally { setOutboundLoading(false); }
   }, [outboundPage, outboundStatus]);
 
-  // ── Load pending list ──────────────────────────────────────────
   const loadPending = useCallback(async (showLoading = false) => {
     if (showLoading) setPendingLoading(true);
     try {
       const res = await stockOutboundService.getPendingRequests();
-      // Lọc hiển thị: warehouse_processing + warehouse_rejected + warehouse_delayed
       setPendingOrders(res.data || []);
     } catch (e) { console.error(e); }
     finally { setPendingLoading(false); }
@@ -145,6 +357,7 @@ export default function WarehouseOutboundPage() {
 
   // ── Helpers ───────────────────────────────────────────────────
   const totalQty = (items: any[]) => items?.reduce((s, i) => s + i.quantity, 0) ?? 0;
+  const totalAmount = (items: any[]) => items?.reduce((s, i) => s + i.quantity * Number(i.unitPrice || 0), 0) ?? 0;
 
   const filteredOutbound = (outboundData?.data ?? []).filter(n => {
     if (outboundSearch) {
@@ -153,17 +366,14 @@ export default function WarehouseOutboundPage() {
           !n.salesOrder?.orderNo?.toLowerCase().includes(q) &&
           !n.salesOrder?.customer?.name?.toLowerCase().includes(q)) return false;
     }
-    if (outboundWarehouse && n.warehouseId !== outboundWarehouse) return false;
     return true;
   });
 
   const filteredPending = (pendingOrders ?? []).filter(o => {
     if (pendingSearch) {
       const q = pendingSearch.toLowerCase();
-      if (!o.orderNo?.toLowerCase().includes(q) &&
-          !o.customer?.name?.toLowerCase().includes(q)) return false;
+      if (!o.orderNo?.toLowerCase().includes(q) && !o.customer?.name?.toLowerCase().includes(q)) return false;
     }
-    if (pendingStatus && o.status !== pendingStatus) return false;
     return true;
   });
 
@@ -173,21 +383,30 @@ export default function WarehouseOutboundPage() {
   const openCreateForOrder = (order: SalesOrder) => {
     setSelectedOrder(order);
     setCreateForm({ warehouseId: createForm.warehouseId || warehouses[0]?.id || '', exportDate: dayjs().format('YYYY-MM-DD'), note: '' });
-    setError('');
+    setError(''); setSuccessMsg('');
     setShowCreateModal(true);
   };
 
   const openRespondForOrder = (order: SalesOrder) => {
     setSelectedOrder(order);
-    setRespondForm({ action: 'reject', reason: '', expectedDate: '' });
-    setError('');
+    setError(''); setSuccessMsg('');
     setShowRespondModal(true);
   };
 
+  const openSaleActionModal = (order: SalesOrder) => {
+    setSelectedOrder(order);
+    setSaleAction('view');
+    setError(''); setSuccessMsg('');
+    setShowSaleActionModal(true);
+  };
+
+  // ── Handlers ──────────────────────────────────────────────────
+
+  // Tạo phiếu xuất kho (hoàn tất xuất)
   const handleCreate = async () => {
     if (!selectedOrder) { setError('Vui lòng chọn đơn hàng'); return; }
     if (!createForm.warehouseId) { setError('Vui lòng chọn kho xuất'); return; }
-    setSaving(true); setError('');
+    setSaving(true); setError(''); setSuccessMsg('');
     try {
       await stockOutboundService.create({
         salesOrderId: selectedOrder.id,
@@ -195,26 +414,65 @@ export default function WarehouseOutboundPage() {
         exportDate: createForm.exportDate,
         note: createForm.note || undefined,
       });
-      setShowCreateModal(false);
-      loadPending(true);
-      loadOutbound(true);
+      setSuccessMsg('✓ Xuất kho thành công! Trừ tồn kho. Đơn chuyển sang Đang giao hàng.');
+      setTimeout(() => {
+        setShowCreateModal(false);
+        loadPending(true);
+        loadOutbound(true);
+      }, 1800);
     } catch (e: any) {
       setError(e.response?.data?.error || e.response?.data?.message || 'Lỗi tạo phiếu xuất');
     } finally { setSaving(false); }
   };
 
-  const handleRespond = async () => {
-    if (!selectedOrder) return;
-    if (respondForm.action === 'delay' && !respondForm.expectedDate) { setError('Vui lòng chọn ngày dự kiến'); return; }
-    if (respondForm.action === 'reject' && !respondForm.reason) { setError('Vui lòng nhập lý do từ chối'); return; }
+  // Kho từ chối đơn (gửi về Sale)
+  const handleWarehouseReject = async (reason: string) => {
+    if (!selectedOrder || !reason) return;
     setSaving(true); setError('');
     try {
-      await stockOutboundService.respondOutbound(selectedOrder.id, respondForm.action, respondForm.reason, respondForm.expectedDate);
+      await stockOutboundService.respondOutbound(selectedOrder.id, 'reject', reason);
       setShowRespondModal(false);
       loadPending(true);
+      alert(`Đã gửi từ chối về Sale.\n\nLý do: ${reason}\n\nTrạng thái đơn: "Kho từ chối" — Sale sẽ xử lý.`);
     } catch (e: any) {
-      setError(e.response?.data?.error || e.response?.data?.message || 'Lỗi phản hồi');
+      setError(e.response?.data?.error || 'Lỗi gửi từ chối');
     } finally { setSaving(false); }
+  };
+
+  // Sale: Xóa đơn
+  const handleSaleDelete = async () => {
+    if (!selectedOrder) return;
+    if (!confirm('Bạn có chắc muốn XÓA đơn hàng này? Hành động này không thể hoàn tác.')) return;
+    setSaving(true);
+    try {
+      await salesOrderService.delete(selectedOrder.id);
+      setShowSaleActionModal(false);
+      loadPending(true);
+      alert('✓ Đơn hàng đã được xóa thành công.');
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Lỗi xóa đơn');
+    } finally { setSaving(false); }
+  };
+
+  // Sale: Dời ngày gửi thẳng về Kho (không qua Logistics)
+  const handleSaleDelayToWarehouse = async (newDate: string) => {
+    if (!selectedOrder || !newDate) return;
+    setSaving(true);
+    try {
+      await salesOrderService.resendToWarehouse(selectedOrder.id, newDate);
+      setShowSaleActionModal(false);
+      loadPending(true);
+      alert(`✓ Đã cập nhật ngày giao: ${FMT_DATE(newDate)}.\n\nĐơn gửi thẳng về Kho (không qua Logistics) để xác nhận giao lại.`);
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Lỗi cập nhật dời ngày');
+    } finally { setSaving(false); }
+  };
+
+  // Sale: Tạo đơn mới (chuyển Sale sang trang đơn hàng)
+  const handleSaleRecreate = () => {
+    setShowSaleActionModal(false);
+    // Navigate to sales orders page with pre-filled customer
+    window.location.href = `/sales-orders/?recreate=${selectedOrder?.customerId}`;
   };
 
   return (
@@ -225,14 +483,16 @@ export default function WarehouseOutboundPage() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .fade-row { animation: rowFadeIn 0.38s ease-out both; }
         .spin { animation: spin 0.7s linear infinite; }
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.96) translateY(10px) } to { opacity: 1; transform: scale(1) translateY(0) } }
       `}</style>
 
       <div className="max-w-[1480px] mx-auto space-y-5">
-        {/* Page header */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Phiếu Xuất Kho</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Kho tiếp nhận đơn từ Logistics → Xuất kho → Giao hàng</p>
+            <p className="text-sm text-slate-500 mt-0.5">Kho tiếp nhận đơn từ Logistics → Xuất kho (trừ tồn) → Giao hàng</p>
           </div>
         </div>
 
@@ -250,9 +510,7 @@ export default function WarehouseOutboundPage() {
               key={t.key}
               onClick={() => setActiveTab(t.key as TabKey)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                activeTab === t.key
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100'
+                activeTab === t.key ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               {t.icon}
@@ -261,10 +519,9 @@ export default function WarehouseOutboundPage() {
           ))}
         </div>
 
-        {/* ════════════════════════ TAB: PHIẾU XUẤT KHO ════════════════════════ */}
+        {/* ═══ TAB: PHIẾU XUẤT KHO ═══ */}
         {activeTab === 'outbound' && (
           <>
-            {/* Filters */}
             <Card className="p-0">
               <div className="p-4 flex flex-wrap gap-3 items-end">
                 <div className="flex-1 min-w-[200px]">
@@ -274,23 +531,12 @@ export default function WarehouseOutboundPage() {
                     onChange={e => { setOutboundSearch(e.target.value); setOutboundPage(1); }}
                   />
                 </div>
-                <div className="w-44">
-                  <Select value={outboundStatus} onChange={e => { setOutboundStatus(e.target.value); setOutboundPage(1); }} options={STATUS_FILTER_OPTIONS} />
-                </div>
-                <div className="w-44">
-                  <Select
-                    value={outboundWarehouse}
-                    onChange={e => { setOutboundWarehouse(e.target.value); setOutboundPage(1); }}
-                    options={[{ value: '', label: 'Tất cả kho' }, ...warehouses.map(w => ({ value: w.id, label: w.name }))]}
-                  />
-                </div>
                 <Button variant="outline" size="sm" onClick={() => loadOutbound(true)} className="flex items-center gap-1.5">
                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
                   Làm mới
                 </Button>
               </div>
 
-              {/* Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-t border-slate-100">
@@ -348,10 +594,10 @@ export default function WarehouseOutboundPage() {
           </>
         )}
 
-        {/* ════════════════════════ TAB: ĐƠN CHỜ XỬ LÝ ════════════════════════ */}
+        {/* ═══ TAB: ĐƠN CHỜ XỬ LÝ ═══ */}
         {activeTab === 'pending' && (
           <>
-            {/* Stats cards */}
+            {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: 'Tổng đơn', value: pendingOrders.length, bg: '#dbeafe', color: '#1d4ed8', icon: (
@@ -377,26 +623,15 @@ export default function WarehouseOutboundPage() {
               ))}
             </div>
 
-            {/* Filters */}
             <Card className="p-0">
-              <div className="p-4 flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-[200px]">
-                  <Input
-                    placeholder="Tìm mã đơn, khách hàng..."
-                    value={pendingSearch}
-                    onChange={e => { setPendingSearch(e.target.value); setPendingPage(1); }}
-                  />
-                </div>
-                <div className="w-44">
-                  <Select value={pendingStatus} onChange={e => { setPendingStatus(e.target.value); setPendingPage(1); }} options={STATUS_FILTER_OPTIONS} />
-                </div>
-                <Button variant="outline" size="sm" onClick={() => loadPending(true)} className="flex items-center gap-1.5">
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-                  Làm mới
-                </Button>
+              <div className="p-4">
+                <Input
+                  placeholder="Tìm mã đơn, khách hàng..."
+                  value={pendingSearch}
+                  onChange={e => { setPendingSearch(e.target.value); setPendingPage(1); }}
+                />
               </div>
 
-              {/* Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-t border-slate-100">
@@ -431,23 +666,30 @@ export default function WarehouseOutboundPage() {
                                 <Button variant="ghost" size="sm" onClick={() => openOrderDetail(o)} className="text-slate-600 hover:bg-slate-100">
                                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"/></svg>
                                 </Button>
+
+                                {/* warehouse_processing: Hoàn tất xuất kho / Từ chối */}
                                 {o.status === 'warehouse_processing' && (
                                   <>
                                     <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 h-7" onClick={() => openCreateForOrder(o)}>
-                                      Chọn kho &amp; xuất
+                                      ✓ Hoàn tất xuất kho
                                     </Button>
                                     <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 text-xs px-3 py-1.5 h-7" onClick={() => openRespondForOrder(o)}>
-                                      Từ chối / Dời ngày
+                                      Từ chối
                                     </Button>
                                   </>
                                 )}
-                                {(o.status === 'warehouse_rejected' || o.status === 'warehouse_delayed') && (
-                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
-                                    style={{
-                                      backgroundColor: o.status === 'warehouse_rejected' ? '#fee2e2' : '#fef3c7',
-                                      color: o.status === 'warehouse_rejected' ? '#b91c1c' : '#92400e',
-                                    }}>
-                                    {o.status === 'warehouse_rejected' ? '⏳ Chờ Sale xử lý' : '⏳ Chờ Sale xác nhận'}
+
+                                {/* warehouse_rejected: Sale xử lý (3 lựa chọn) */}
+                                {o.status === 'warehouse_rejected' && (
+                                  <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-3 py-1.5 h-7" onClick={() => openSaleActionModal(o)}>
+                                    Sale xử lý
+                                  </Button>
+                                )}
+
+                                {/* warehouse_delayed: Đang chờ Sale xác nhận */}
+                                {(o.status === 'warehouse_delayed') && (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                                    ⏳ Chờ Sale xác nhận
                                   </span>
                                 )}
                               </div>
@@ -464,7 +706,7 @@ export default function WarehouseOutboundPage() {
         )}
       </div>
 
-      {/* ════════════════════════ MODAL: CHI TIẾT PHIẾU XUẤT ════════════════════════ */}
+      {/* ═══ MODAL: CHI TIẾT PHIẾU XUẤT ═══ */}
       <Modal open={showDetailModal} onClose={() => setShowDetailModal(false)} title="Chi tiết phiếu xuất" size="lg">
         {selectedNote && (
           <div className="space-y-4">
@@ -485,28 +727,21 @@ export default function WarehouseOutboundPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-100">
-                    <tr>
-                      {['SKU','Sản phẩm','Số lượng xuất'].map(h => (
-                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                    <tr>{['SKU','Sản phẩm','Số lượng xuất'].map(h => <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(selectedNote.items ?? []).map(i => (
+                      <tr key={i.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2.5 font-mono text-blue-600">{i.product?.sku}</td>
+                        <td className="px-4 py-2.5 text-slate-700">{i.product?.name}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{i.quantity}</td>
+                      </tr>
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(selectedNote.items ?? []).map(i => (
-                    <tr key={i.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 font-mono text-blue-600">{i.product?.sku}</td>
-                      <td className="px-4 py-2.5 text-slate-700">{i.product?.name}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{i.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-slate-50 border-t border-slate-200">
-                  <tr>
-                    <td colSpan={2} className="px-4 py-2.5 text-right font-bold text-slate-700">Tổng cộng:</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-slate-900">{totalQty(selectedNote.items)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </tbody>
+                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                    <tr><td colSpan={2} className="px-4 py-2.5 text-right font-bold text-slate-700">Tổng cộng:</td><td className="px-4 py-2.5 text-right font-bold text-slate-900">{totalQty(selectedNote.items)}</td></tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
             <div className="flex justify-end"><Button variant="outline" onClick={() => setShowDetailModal(false)}>Đóng</Button></div>
@@ -514,10 +749,11 @@ export default function WarehouseOutboundPage() {
         )}
       </Modal>
 
-      {/* ════════════════════════ MODAL: TẠO PHIẾU XUẤT ════════════════════════ */}
-      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Tạo phiếu xuất kho" size="lg">
+      {/* ═══ MODAL: TẠO PHIẾU XUẤT (HOÀN TẤT XUẤT KHO) ═══ */}
+      <Modal open={showCreateModal} onClose={() => !saving && setShowCreateModal(false)} title="Hoàn tất xuất kho" size="lg">
         <div className="space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
+          {successMsg && <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-lg font-semibold">{successMsg}</div>}
 
           {selectedOrder && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm">
@@ -550,139 +786,158 @@ export default function WarehouseOutboundPage() {
                 <p className="text-xs font-semibold text-slate-500 uppercase">Chi tiết đơn hàng</p>
               </div>
               <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>{['SKU','Sản phẩm','Số lượng'].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>)}</tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(selectedOrder.items ?? []).map((item: any) => (
-                    <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 font-mono text-blue-600">{item.product?.sku}</td>
-                      <td className="px-4 py-2.5 text-slate-700">{item.product?.name}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{item.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-slate-50 border-t border-slate-200">
-                  <tr>
-                    <td colSpan={2} className="px-4 py-2.5 text-right font-bold text-slate-700">Tổng cộng:</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-slate-900">{totalQty(selectedOrder.items)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>{['SKU','Sản phẩm','Số lượng'].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(selectedOrder.items ?? []).map((item: any) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2.5 font-mono text-blue-600">{item.product?.sku}</td>
+                        <td className="px-4 py-2.5 text-slate-700">{item.product?.name}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{item.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                    <tr><td colSpan={2} className="px-4 py-2.5 text-right font-bold text-slate-700">Tổng cộng:</td><td className="px-4 py-2.5 text-right font-bold text-slate-900">{totalQty(selectedOrder.items)}</td></tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
           )}
-          
+
+          {/* Inventory warning */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+            <strong>⚠️ Lưu ý:</strong> Khi xác nhận xuất kho, hệ thống sẽ <strong>tự động trừ số lượng tồn kho</strong> trong kho đã chọn. Không thể hoàn tác.
+          </div>
+
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Hủy</Button>
-            <Button onClick={handleCreate} loading={saving} disabled={!selectedOrder}>Tạo phiếu xuất</Button>
+            <Button variant="outline" onClick={() => setShowCreateModal(false)} disabled={saving}>Hủy</Button>
+            <Button onClick={handleCreate} loading={saving} disabled={!!successMsg} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {saving ? 'Đang xuất kho...' : '✓ Hoàn tất xuất kho'}
+            </Button>
           </div>
         </div>
       </Modal>
 
-      {/* ════════════════════════ MODAL: PHẢN HỒI TỪ KHO (TỪ CHỐI / DỜI NGÀY) ════════════════════════ */}
-      {showRespondModal && (
+      {/* ═══ MODAL: KHO TỪ CHỐI → GỬI VỀ SALE ═══ */}
+      {showRespondModal && selectedOrder && (
+        <WarehouseRejectModal
+          order={selectedOrder}
+          onClose={() => setShowRespondModal(false)}
+          onSubmit={handleWarehouseReject}
+          saving={saving}
+        />
+      )}
+
+      {/* ═══ MODAL: SALE XỬ LÝ ĐƠN BỊ KHO TỪ CHỐI (3 LỰA CHỌN) ═══ */}
+      {showSaleActionModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           style={{ animation: 'fadeIn 180ms ease-out' }}>
-          <div className="bg-white rounded-3xl border border-red-200 w-full max-w-lg p-7 shadow-2xl"
+          <div className="bg-white rounded-3xl border border-amber-200 w-full max-w-lg shadow-2xl"
             style={{ animation: 'scaleIn 220ms ease-out' }}>
-            <div className="flex items-start justify-between gap-4 mb-5">
+
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 px-7 py-5 border-b border-amber-100">
               <div>
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold mb-2">
-                  KHO XỬ LÝ ĐƠN
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-extrabold mb-2">
+                  ĐƠN BỊ KHO TỪ CHỐI
                 </span>
-                <h3 className="text-xl font-black text-slate-900 mt-1">Phản hồi từ kho</h3>
-                <p className="text-sm text-slate-500 mt-1">Kho xử lý đơn {selectedOrder?.orderNo}</p>
+                <h3 className="text-xl font-black text-slate-900">{selectedOrder.orderNo}</h3>
+                <p className="text-sm text-slate-500 mt-0.5">{selectedOrder.customer?.name}</p>
               </div>
-              <button onClick={() => setShowRespondModal(false)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
+              <button onClick={() => setShowSaleActionModal(false)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
                 ×
               </button>
             </div>
 
-            {selectedOrder && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm mb-5">
-                <div className="flex items-center gap-2">
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/></svg>
-                  <span className="font-semibold text-slate-800">{selectedOrder.customer?.name}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 mt-2 text-slate-600">
-                  <div><span className="text-slate-500">Mã đơn:</span> <span className="font-mono font-semibold ml-1">{selectedOrder.orderNo}</span></div>
-                  <div><span className="text-slate-500">Dự kiến:</span> <span className="ml-1">{selectedOrder.expectedDeliveryDate ? dayjs(selectedOrder.expectedDeliveryDate).format('DD/MM/YYYY') : '—'}</span></div>
+            {/* Rejection reason */}
+            {selectedOrder.note && (
+              <div className="px-7 py-4">
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                  <p className="text-xs font-bold text-red-600 mb-1">LÝ DO KHO TỪ CHỐI</p>
+                  <p className="font-medium">{selectedOrder.note}</p>
                 </div>
               </div>
             )}
 
-            {error && (
-              <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold">
-                {error}
-              </div>
-            )}
+            {error && <div className="px-7 pb-3"><div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div></div>}
 
-            {/* Action tabs */}
-            <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4">
-              {[
-                { value: 'reject', label: 'Từ chối', desc: 'Báo Sale xem xét lại', color: 'bg-white text-red-700 shadow-sm' },
-                { value: 'delay',  label: 'Dời ngày',  desc: 'Giao trong ngày khác', color: 'bg-white text-amber-700 shadow-sm' },
-              ].map(a => (
-                <button
-                  key={a.value}
-                  onClick={() => setRespondForm(f => ({ ...f, action: a.value as 'reject' | 'delay' }))}
-                  className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all ${respondForm.action === a.value ? a.color : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  <div>{a.label}</div>
-                  <div className="text-xs font-normal opacity-70">{a.desc}</div>
+            {/* 3 Choices */}
+            {saleAction === 'view' && selectedOrder.status === 'warehouse_rejected' && (
+              <div className="px-7 pb-7 space-y-4">
+                <p className="text-sm font-bold text-slate-700">Chọn hành động xử lý:</p>
+
+                {/* Lựa chọn 1: Xóa đơn */}
+                <button onClick={handleSaleDelete} disabled={saving}
+                  className="w-full text-left border-2 border-red-200 rounded-2xl p-4 hover:border-red-400 hover:bg-red-50 transition-all disabled:opacity-50">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-black flex-shrink-0">1</div>
+                    <div>
+                      <p className="font-extrabold text-red-700 text-sm">Xóa đơn hàng này</p>
+                      <p className="text-xs text-red-500 mt-0.5">Đơn sẽ bị hủy hoàn toàn. Có thể tạo đơn mới cho khách.</p>
+                    </div>
+                  </div>
                 </button>
-              ))}
-            </div>
 
-            {respondForm.action === 'reject' ? (
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Lý do từ chối <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 resize-none"
-                  rows={3}
-                  placeholder="VD: Thiếu hàng trong kho, cần đặt thêm từ nhà máy..."
-                  value={respondForm.reason}
-                  onChange={e => setRespondForm(f => ({ ...f, reason: e.target.value }))}
-                />
-                <p className="text-xs text-slate-500 mt-1.5">
-                  Đơn sẽ chuyển trạng thái <strong className="text-red-600">"Kho từ chối"</strong>. Sale sẽ xem xét và sửa lại hoặc tạo lại đơn.
-                </p>
-              </div>
-            ) : (
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Ngày giao mới <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  type="date"
-                  value={respondForm.expectedDate}
-                  onChange={e => setRespondForm(f => ({ ...f, expectedDate: e.target.value }))}
-                />
-                <p className="text-xs text-slate-500 mt-1.5">
-                  Đơn sẽ chuyển trạng thái <strong className="text-amber-600">"Dời ngày"</strong>. Sale xác nhận dời ngày để kho giao lại.
-                </p>
+                {/* Lựa chọn 2: Dời ngày gửi thẳng về Kho */}
+                <button onClick={() => setSaleAction('delay')} disabled={saving}
+                  className="w-full text-left border-2 border-amber-200 rounded-2xl p-4 hover:border-amber-400 hover:bg-amber-50 transition-all">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-sm font-black flex-shrink-0">2</div>
+                    <div>
+                      <p className="font-extrabold text-amber-700 text-sm">Dời ngày giao — Gửi thẳng cho Kho</p>
+                      <p className="text-xs text-amber-500 mt-0.5">Cập nhật ngày giao mới. Đơn gửi lại kho mà <strong>không qua Logistics</strong>. Kho sẽ xác nhận giao lại.</p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Lựa chọn 3: Tạo đơn mới */}
+                <button onClick={handleSaleRecreate} disabled={saving}
+                  className="w-full text-left border-2 border-blue-200 rounded-2xl p-4 hover:border-blue-400 hover:bg-blue-50 transition-all disabled:opacity-50">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-black flex-shrink-0">3</div>
+                    <div>
+                      <p className="font-extrabold text-blue-700 text-sm">Tạo đơn mới</p>
+                      <p className="text-xs text-blue-500 mt-0.5">Xóa đơn cũ và tạo đơn mới, quy trình bắt đầu lại từ đầu.</p>
+                    </div>
+                  </div>
+                </button>
               </div>
             )}
 
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" onClick={() => setShowRespondModal(false)}>Hủy</Button>
-              <Button
-                onClick={handleRespond}
-                loading={saving}
-                className={respondForm.action === 'reject' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-amber-600 hover:bg-amber-700 text-white'}
-              >
-                {respondForm.action === 'reject' ? 'Từ chối đơn' : 'Xác nhận dời ngày'}
-              </Button>
-            </div>
+            {/* Lựa chọn 2: Dời ngày form */}
+            {saleAction === 'delay' && (
+              <div className="px-7 pb-7 space-y-4">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+                  <strong>Lựa chọn 2:</strong> Cập nhật ngày giao mới. Đơn sẽ gửi thẳng về Kho (không qua Logistics) với trạng thái <strong>"Dời ngày"</strong>. Kho xác nhận lại để giao.
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Ngày giao dự kiến mới <span className="text-red-500">*</span></label>
+                  <Input
+                    type="date"
+                    value={dayjs().add(3, 'day').format('YYYY-MM-DD')}
+                    onChange={e => {}}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setSaleAction('view')} className="flex-1">← Quay lại</Button>
+                  <Button
+                    onClick={() => handleSaleDelayToWarehouse(dayjs().add(3, 'day').format('YYYY-MM-DD'))}
+                    loading={saving}
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    Gửi dời ngày về Kho
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ════════════════════════ MODAL: CHI TIẾT ĐƠN HÀNG (từ tab pending) ════════════════════════ */}
+      {/* ═══ MODAL: CHI TIẾT ĐƠN HÀNG ═══ */}
       <Modal open={showOrderDetailModal} onClose={() => setShowOrderDetailModal(false)} title="Chi tiết đơn hàng" size="lg">
         {orderDetailData && (
           <div className="space-y-4">
@@ -696,18 +951,14 @@ export default function WarehouseOutboundPage() {
                   {ORDER_STATUS_LABELS[orderDetailData.status] || orderDetailData.status}
                 </span>
               </div>
-              {orderDetailData.note && <div className="col-span-3"><span className="text-slate-500">Ghi chú:</span> <span className="ml-1 text-slate-700">{orderDetailData.note}</span></div>}
             </div>
+            {orderDetailData.note && <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm"><span className="text-slate-500">Ghi chú:</span> <span className="ml-1 text-slate-700">{orderDetailData.note}</span></div>}
 
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-100">
-                    <tr>
-                      {['SKU','Sản phẩm','Số lượng','Đơn giá','Thành tiền'].map(h => (
-                        <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
-                      ))}
-                    </tr>
+                    <tr>{['SKU','Sản phẩm','Số lượng','Đơn giá','Thành tiền'].map(h => <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>)}</tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {(orderDetailData.items ?? []).map((item: any) => (
@@ -715,18 +966,33 @@ export default function WarehouseOutboundPage() {
                         <td className="px-4 py-2.5 font-mono text-blue-600">{item.product?.sku}</td>
                         <td className="px-4 py-2.5 text-slate-700">{item.product?.name}</td>
                         <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{item.quantity}</td>
-                        <td className="px-4 py-2.5 text-right text-slate-600">{item.unitPrice ? dayjs().format('DD/MM/YYYY') && item.unitPrice.toLocaleString('vi-VN') + ' đ' : '—'}</td>
-                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
-                          {item.unitPrice ? (item.quantity * item.unitPrice).toLocaleString('vi-VN') + ' đ' : '—'}
-                        </td>
+                        <td className="px-4 py-2.5 text-right text-slate-600">{item.unitPrice ? VND(Number(item.unitPrice)) + ' đ' : '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{item.unitPrice ? VND(item.quantity * Number(item.unitPrice)) + ' đ' : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                    <tr>
+                      <td colSpan={4} className="px-4 py-2.5 text-right font-extrabold text-slate-700">Tổng cộng:</td>
+                      <td className="px-4 py-2.5 text-right font-black text-blue-600">{VND(totalAmount(orderDetailData.items))} đ</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
 
-            <div className="flex justify-end"><Button variant="outline" onClick={() => setShowOrderDetailModal(false)}>Đóng</Button></div>
+            {/* Sale action button if warehouse rejected */}
+            {orderDetailData.status === 'warehouse_rejected' && (
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => { setShowOrderDetailModal(false); }}>Đóng</Button>
+                <Button onClick={() => { setShowOrderDetailModal(false); openSaleActionModal(orderDetailData); }} className="bg-amber-600 hover:bg-amber-700 text-white">
+                  Sale xử lý (3 lựa chọn)
+                </Button>
+              </div>
+            )}
+            {orderDetailData.status !== 'warehouse_rejected' && (
+              <div className="flex justify-end"><Button variant="outline" onClick={() => setShowOrderDetailModal(false)}>Đóng</Button></div>
+            )}
           </div>
         )}
       </Modal>
