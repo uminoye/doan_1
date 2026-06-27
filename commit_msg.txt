@@ -1,0 +1,1 @@
+﻿Tái cấu trúc toàn bộ: Backend Express CommonJS + Frontend Next.js UI mới (sidebar navy, Inter, RemixIcon), API kết nối Neon

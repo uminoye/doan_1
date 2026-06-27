@@ -47,12 +47,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (!authService.isAuthenticated()) {
       router.push('/login/');
     }
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!user) return null;
 
-  const userRole = user.role_name || 'guest';
-
+  const userRole = user.role || 'guest';
   const visibleGroups = MENU_GROUPS
     .map(group => ({
       ...group,
@@ -60,7 +60,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }))
     .filter(group => group.items.length > 0);
 
-  const activePath = pathname === '/' ? '/' : `/${pathname.split('/')[1]}`;
+  const activePath = '/' + (pathname === '/' ? '' : pathname.split('/')[1] || '');
 
   const breadcrumbs = [
     { label: 'Trang chủ', path: '/' },
@@ -110,13 +110,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 42, height: 42, borderRadius: 999, background: 'linear-gradient(135deg, #22c55e, #10b981)', display: 'grid', placeItems: 'center', fontWeight: 800, color: '#082112', overflow: 'hidden' }}>
                 <img
-                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || 'User')}&background=0ea5e9&color=fff`}
+                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName || 'User')}&background=0ea5e9&color=fff`}
                   alt="Avatar"
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.full_name || 'Người dùng'}</div>
+                <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.fullName || 'Người dùng'}</div>
                 <div style={{ fontSize: 12, color: '#34d399' }}>{userRole}</div>
               </div>
             </div>
@@ -222,15 +222,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 999, padding: '6px 10px 6px 6px', cursor: 'pointer' }}
             >
               <div style={{ width: 30, height: 30, borderRadius: 999, background: 'linear-gradient(135deg, #10b981, #22c55e)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 12 }}>
-                {(user.full_name || 'U').slice(0, 1).toUpperCase()}
+                {(user.fullName || 'U').slice(0, 1).toUpperCase()}
               </div>
-              <span style={{ fontWeight: 600, color: '#0f172a' }}>{user.full_name || 'Người dùng'}</span>
+              <span style={{ fontWeight: 600, color: '#0f172a' }}>{user.fullName || 'Người dùng'}</span>
               <i className="ri-arrow-down-s-line" style={{ color: '#64748b' }} />
             </button>
             {showUserMenu && (
               <div style={{ position: 'absolute', right: 0, top: 48, width: 180, background: '#fff', borderRadius: 14, boxShadow: '0 18px 32px rgba(15,23,42,0.12)', border: '1px solid #e2e8f0', padding: 8 }}>
                 <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 4 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{user.full_name}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{user.fullName}</div>
                   <div style={{ fontSize: 12, color: '#10b981', marginTop: 2, textTransform: 'capitalize' }}>{userRole}</div>
                 </div>
                 <button onClick={handleLogout} style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', color: '#ef4444', fontWeight: 600 }}>

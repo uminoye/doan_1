@@ -3,7 +3,7 @@ import { api } from './api';
 export const authService = {
   async login(email: string, password: string) {
     const { data } = await api.post('/auth/login', { email, password });
-    localStorage.setItem('accessToken', data.accessToken);
+    localStorage.setItem('accessToken', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
     return data;
   },
@@ -61,7 +61,7 @@ export const productService = {
 
 export const customerService = {
   getAll() { return api.get('/customers'); },
-  create(data: { company_name: string; phone?: string; address?: string; contact_person?: string }) {
+  create(data: { customer_code?: string; company_name: string; phone?: string; address?: string; contact_person?: string }) {
     return api.post('/customers', data);
   },
   delete(id: string) { return api.delete(`/customers/${id}`); },
@@ -71,6 +71,9 @@ export const warehouseService = {
   getAll() { return api.get('/warehouses'); },
   create(data: { name: string; location?: string }) {
     return api.post('/warehouses', data);
+  },
+  update(id: string, data: { name?: string; location?: string }) {
+    return api.put(`/warehouses/${id}`, data);
   },
   delete(id: string) { return api.delete(`/warehouses/${id}`); },
 };
