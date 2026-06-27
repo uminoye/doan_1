@@ -396,8 +396,8 @@ export class SalesOrderService {
   async confirmDelay(salesOrderId: string) {
     const order = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
-    if (order.status !== 'warehouse_delayed') {
-      throw new AppError(400, 'Đơn không ở trạng thái dời ngày');
+    if (order.status !== 'warehouse_delayed' && order.status !== 'warehouse_rejected') {
+      throw new AppError(400, 'Đơn không ở trạng thái dời ngày hoặc bị kho từ chối');
     }
 
     await prisma.$transaction(async (tx) => {
@@ -428,8 +428,8 @@ export class SalesOrderService {
   }) {
     const oldOrder = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
     if (!oldOrder) throw new AppError(404, 'Không tìm thấy đơn hàng gốc');
-    if (!['warehouse_rejected'].includes(oldOrder.status)) {
-      throw new AppError(400, 'Chỉ có thể lập lại đơn ở trạng thái bị kho từ chối');
+    if (oldOrder.status !== 'pending' && oldOrder.status !== 'warehouse_rejected' && oldOrder.status !== 'warehouse_delayed') {
+      throw new AppError(400, 'Chỉ có thể lập lại đơn ở trạng thái bị kho từ chối, dời ngày hoặc chờ duyệt');
     }
     if (!data.items || data.items.length === 0) {
       throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');
