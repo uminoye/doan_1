@@ -4,6 +4,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
+const prisma = require('./config/database');
 
 // Middleware
 app.use(cors());
