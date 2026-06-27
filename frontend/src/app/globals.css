@@ -14,12 +14,9 @@
   margin: 0;
 }
 
-html,
-body {
-  max-width: 100vw;
+html {
+  scroll-behavior: smooth;
   overflow-x: hidden;
-  height: 100%;
-  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -27,6 +24,13 @@ body {
   background-color: rgb(var(--background-start-rgb));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scale về mức vừa mắt (tương đương zoom 80%) trên màn lớn */
+@media (min-width: 1280px) {
+  html {
+    zoom: 0.875;
+  }
 }
 
 a {
