@@ -172,7 +172,7 @@ export default function AccountsPage() {
               style={{ ...styles.statCard, opacity: pageLoaded ? 1 : 0,
                 transform: hoveredStat === item.key ? 'translateY(-5px) scale(1.01)' : pageLoaded ? 'translateY(0) scale(1)' : 'translateY(18px) scale(1)',
                 transition: `opacity 420ms ease ${120 + index * 100}ms, transform 460ms cubic-bezier(0.22, 1, 0.36, 1)` }}>
-              <div style={{ ...styles.statIcon, ...styles[item.tone] }}>{item.icon}</div>
+              <div style={{ ...styles.statIcon, ...styles[item.tone as keyof typeof styles] }}>{item.icon}</div>
               <p style={styles.statLabel}>{item.label}</p>
               <div style={styles.statValue}>{item.value}</div>
               <p style={styles.statDesc}>{item.desc}</p>
