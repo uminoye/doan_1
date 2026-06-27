@@ -1,0 +1,10 @@
+fix: logistics khong nhan duoc don — sua getAll truy van SalesOrder thay vi DeliveryRequest
+
+Backend logisticsService.getAll() truoc day truy van bang DeliveryRequest.
+SalesOrder moi tao (status=pending) KHONG co DeliveryRequest tuong ung
+-> Logistics luon thay danh sach rong.
+
+Fix: doi getAll() truy van truc tiep bang SalesOrder voi filter
+status in ['pending', 'logistics_review'], phu hop luong Sale->Logistics.
+
+Frontend: bo logic unwrap DeliveryRequest vi response gio la SalesOrder[] truc tiep.

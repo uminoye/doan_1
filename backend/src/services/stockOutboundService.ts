@@ -146,8 +146,13 @@ export class StockOutboundService {
         where: { salesOrderId: data.salesOrderId },
         data: { status: 'shipping' },
       });
-    });
 
+      // THÊM ĐOẠN NÀY: Tự động đẩy thanh tiến trình của Logistics lên Bước 1 (ĐVVC đã lấy hàng)
+      await tx.shipment.updateMany({
+        where: { salesOrderId: data.salesOrderId },
+        data: { currentStep: 1, status: 'shipping' },
+      });
+    });
     return { message: 'Xuất kho thành công! Đơn chuyển sang trạng thái Đang giao.' };
   }
 

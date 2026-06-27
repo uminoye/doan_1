@@ -230,14 +230,20 @@ function TrackingModal({
               {/* Step 0–2: Tiến bước */}
               {step >= 0 && step <= 2 && (
                 <div className="flex gap-3">
-                  <button
-                    onClick={onAdvance}
-                    disabled={saving}
-                    className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                  >
-                    {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
-                    Tiến bước → {SHIPMENT_STEP_LABELS[(step + 1) as keyof typeof SHIPMENT_STEP_LABELS]}
-                  </button>
+                  {step === 0 ? (
+                    <div className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-400 font-extrabold text-sm flex items-center justify-center cursor-not-allowed border border-slate-200">
+                      ⏳ Đang chờ Kho xuất hàng...
+                    </div>
+                  ) : (
+                    <button
+                      onClick={onAdvance}
+                      disabled={saving}
+                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                    >
+                      {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                      Tiến bước → {SHIPMENT_STEP_LABELS[(step + 1) as keyof typeof SHIPMENT_STEP_LABELS]}
+                    </button>
+                  )}
                 </div>
               )}
 
