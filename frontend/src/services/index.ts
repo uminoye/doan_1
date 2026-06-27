@@ -4,7 +4,7 @@ export const authService = {
   async login(email: string, password: string) {
     const { data } = await api.post('/auth/login', { email, password });
     localStorage.setItem('accessToken', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
+    localStorage.setItem('user', JSON.stringify({ ...data.user, role: (data.user.role as string).toLowerCase() }));
     return data;
   },
   logout() {
@@ -15,7 +15,9 @@ export const authService = {
     if (typeof window === 'undefined') return null;
     try {
       const raw = localStorage.getItem('user');
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null;
+      const user = JSON.parse(raw);
+      return { ...user, role: (user.role as string).toLowerCase() };
     } catch {
       return null;
     }
