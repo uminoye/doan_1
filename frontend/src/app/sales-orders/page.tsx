@@ -16,6 +16,8 @@ const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
   logistics_rejected: { label: 'Bị từ chối', tone: 'danger' },
   logistics_review:   { label: 'LXxem xét',  tone: 'orange' },
   warehouse_processing: { label: 'Kho đang xuất', tone: 'info' },
+  warehouse_rejected: { label: 'Kho từ chối', tone: 'danger' },
+  warehouse_delayed:  { label: 'Dời ngày',   tone: 'amber' },
   shipping:          { label: 'Đang giao',  tone: 'purple' },
   completed:         { label: 'Hoàn thành', tone: 'success' },
   returned:          { label: 'Hoàn trả',   tone: 'danger' },
@@ -30,6 +32,7 @@ const TONE_STYLES: Record<string, { bg: string; text: string; border: string }> 
   success: { bg: 'bg-green-50',   text: 'text-green-800',  border: 'border-green-200' },
   purple:  { bg: 'bg-purple-50',  text: 'text-purple-800', border: 'border-purple-200' },
   orange:  { bg: 'bg-orange-50',  text: 'text-orange-800', border: 'border-orange-200' },
+  amber:   { bg: 'bg-amber-50',   text: 'text-amber-800',  border: 'border-amber-200' },
 };
 
 const VND = new Intl.NumberFormat('vi-VN').format;
@@ -67,6 +70,7 @@ export default function SalesOrdersPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [recreateMode, setRecreateMode] = useState(false);
   const [orderNo, setOrderNo] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [expectedDate, setExpectedDate] = useState('');
@@ -77,6 +81,7 @@ export default function SalesOrdersPage() {
 
   const [viewOrder, setViewOrder] = useState<SalesOrder | null>(null);
   const [errorOrder, setErrorOrder] = useState<SalesOrder | null>(null);
+  const [warehouseRejectedOrder, setWarehouseRejectedOrder] = useState<SalesOrder | null>(null);
   const [cancelOrder, setCancelOrder] = useState<SalesOrder | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -126,9 +131,10 @@ export default function SalesOrdersPage() {
     issues: orders.filter(o => ['logistics_review', 'returned', 'canceled'].includes(o.status)).length,
   };
 
-  const openCreate = () => {
+  const openCreate = (recreateOrderNo?: string) => {
     setEditingId(null);
-    setOrderNo('');
+    setRecreateMode(false);
+    setOrderNo(recreateOrderNo || '');
     setCustomerId(customers[0]?.id || '');
     setExpectedDate('');
     setNote('');
@@ -158,7 +164,7 @@ export default function SalesOrdersPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const closeCreate = () => { setIsCreateOpen(false); setEditingId(null); };
+  const closeCreate = () => { setIsCreateOpen(false); setEditingId(null); setRecreateMode(false); };
 
   const addItem = () => setFormItems([...formItems, { product_id: '', quantity: 1, unit_price: 0 }]);
 
@@ -177,6 +183,10 @@ export default function SalesOrdersPage() {
   const removeItem = (idx: number) => setFormItems(formItems.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
+    if (recreateMode && editingId) {
+      await handleRecreateSubmit();
+      return;
+    }
     const validItems = formItems.filter(i => i.product_id && i.quantity > 0);
     if (!customerId) { setFormError('Vui lòng chọn khách hàng'); return; }
     if (!validItems.length) { setFormError('Phải có ít nhất 1 sản phẩm'); return; }
@@ -231,6 +241,68 @@ export default function SalesOrdersPage() {
     finally { setActionLoading(null); }
   };
 
+  const [wrAction, setWrAction] = useState<'confirm_delay' | 'recreate'>('confirm_delay');
+  const [wrExpectedDate, setWrExpectedDate] = useState('');
+  const [wrNote, setWrNote] = useState('');
+
+  const handleWarehouseRejectConfirm = async () => {
+    if (!warehouseRejectedOrder) return;
+    if (wrAction === 'confirm_delay') {
+      if (!wrExpectedDate) { alert('Vui lòng chọn ngày giao mới'); return; }
+      try {
+        await salesOrderService.update(warehouseRejectedOrder.id, {
+          customerId: warehouseRejectedOrder.customerId,
+          expectedDeliveryDate: wrExpectedDate,
+          note: warehouseRejectedOrder.note || undefined,
+          items: warehouseRejectedOrder.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: Number(i.unitPrice) })),
+        });
+        await salesOrderService.confirmDelay(warehouseRejectedOrder.id);
+        alert('Đã xác nhận dời ngày! Đơn quay về chờ duyệt.');
+        setWarehouseRejectedOrder(null);
+        fetchData();
+      } catch (e: any) { alert(e.response?.data?.error || 'Lỗi xác nhận dời ngày'); }
+    } else {
+      // Recreate - mở form tạo mới
+      openCreate();
+      setEditingId(warehouseRejectedOrder.id);
+      setRecreateMode(true);
+      setOrderNo(warehouseRejectedOrder.orderNo);
+      setCustomerId(warehouseRejectedOrder.customerId);
+      setExpectedDate(dayjs().add(1, 'day').format('YYYY-MM-DD'));
+      setNote('');
+      setFormItems(warehouseRejectedOrder.items.map(i => ({
+        id: i.id,
+        product_id: i.productId,
+        quantity: i.quantity,
+        unit_price: Number(i.unitPrice),
+        product: i.product,
+      })));
+      setWarehouseRejectedOrder(null);
+    }
+  };
+
+  const handleRecreateSubmit = async () => {
+    if (!editingId) return;
+    const validItems = formItems.filter(i => i.product_id && i.quantity > 0);
+    if (!customerId) { setFormError('Vui lòng chọn khách hàng'); return; }
+    if (!validItems.length) { setFormError('Phải có ít nhất 1 sản phẩm'); return; }
+    setSaving(true); setFormError('');
+    try {
+      await salesOrderService.recreate({
+        warehouseRejectedOrderId: editingId,
+        customerId,
+        expectedDeliveryDate: expectedDate || undefined,
+        note: note || undefined,
+        items: validItems.map(i => ({ productId: i.product_id, quantity: i.quantity, unitPrice: i.unit_price })),
+      });
+      alert(`Đã tạo lại đơn!`);
+      closeCreate();
+      fetchData();
+    } catch (e: any) {
+      setFormError(e.response?.data?.error || 'Lỗi tạo lại đơn');
+    } finally { setSaving(false); }
+  };
+
   const totalAmount = formItems.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
 
   return (
@@ -245,7 +317,7 @@ export default function SalesOrdersPage() {
               <p className="text-slate-500 mt-1">Theo dõi, chỉnh sửa và xử lý đơn hàng trong một giao diện gọn gàng.</p>
             </div>
             <button
-              onClick={openCreate}
+              onClick={() => openCreate()}
               className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-400 text-white font-extrabold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
               style={{ boxShadow: '0 14px 28px rgba(37,99,235,0.22)' }}
             >
@@ -327,6 +399,8 @@ export default function SalesOrdersPage() {
                   <option value="pending">Chờ duyệt</option>
                   <option value="logistics_rejected">Bị từ chối</option>
                   <option value="warehouse_processing">Kho đang xử lý</option>
+                  <option value="warehouse_rejected">Kho từ chối</option>
+                  <option value="warehouse_delayed">Dời ngày</option>
                   <option value="shipping">Đang giao</option>
                   <option value="completed">Hoàn thành</option>
                   <option value="logistics_review">Logistics xem xét lại</option>
@@ -397,6 +471,13 @@ export default function SalesOrdersPage() {
                             >
                               Sửa lỗi &amp; xử lý
                             </button>
+                          ) : o.status === 'warehouse_rejected' || o.status === 'warehouse_delayed' ? (
+                            <button
+                              onClick={() => { setWarehouseRejectedOrder(o); setWrAction('confirm_delay'); setWrExpectedDate(o.expectedDeliveryDate ? dayjs(o.expectedDeliveryDate).format('YYYY-MM-DD') : ''); setWrNote(''); }}
+                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 text-white text-xs font-extrabold shadow-md hover:shadow-lg transition-all"
+                            >
+                              {o.status === 'warehouse_rejected' ? 'Xem &amp; xử lý' : 'Xác nhận dời ngày'}
+                            </button>
                           ) : isEditable ? (
                             <div className="flex gap-2">
                               <button
@@ -438,7 +519,7 @@ export default function SalesOrdersPage() {
                 <div>
                   <p className="text-xs font-extrabold text-blue-600 uppercase tracking-widest">Quản lý đơn hàng</p>
                   <h3 className="text-xl font-black text-slate-900 mt-1 tracking-tight">
-                    {editingId ? `Chỉnh sửa đơn ${orderNo}` : 'Tạo đơn hàng mới'}
+                    {recreateMode ? `Tạo lại đơn ${orderNo}` : (editingId ? `Chỉnh sửa đơn ${orderNo}` : 'Tạo đơn hàng mới')}
                   </h3>
                 </div>
                 <button onClick={closeCreate} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-700 font-black text-xl hover:bg-slate-50 transition-all cursor-pointer">
@@ -611,7 +692,7 @@ export default function SalesOrdersPage() {
                       style={{ boxShadow: editingId ? '0 14px 30px rgba(234,88,12,0.18)' : '0 14px 30px rgba(15,118,110,0.18)' }}
                     >
                       {saving && <Spinner size="sm" />}
-                      {editingId ? 'Lưu & Gửi lại' : 'Gửi đơn cho Logistics'}
+                      {recreateMode ? 'Tạo lại đơn (mã cũ)' : (editingId ? 'Lưu & Gửi lại' : 'Gửi đơn cho Logistics')}
                     </button>
                     {editingId && (
                       <button type="button" onClick={closeCreate} className="px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 transition-all cursor-pointer">
@@ -759,6 +840,144 @@ export default function SalesOrdersPage() {
                 <div className="flex justify-end">
                   <button onClick={() => setCancelOrder(null)} className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 to-rose-400 text-white font-extrabold shadow-md hover:shadow-lg transition-all cursor-pointer">
                     Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== WAREHOUSE REJECTED / DELAYED MODAL ===== */}
+        {warehouseRejectedOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            style={{ animation: 'fadeIn 180ms ease-out' }}>
+            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-2xl overflow-hidden shadow-2xl"
+              style={{ animation: 'scaleIn 220ms ease-out' }}>
+              <div className={`px-7 py-5 border-b border-slate-100 flex items-start justify-between gap-4 ${
+                warehouseRejectedOrder.status === 'warehouse_rejected'
+                  ? 'bg-gradient-to-b from-red-50 to-white'
+                  : 'bg-gradient-to-b from-amber-50 to-white'
+              }`}>
+                <div>
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold mb-3 ${
+                    warehouseRejectedOrder.status === 'warehouse_rejected'
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {warehouseRejectedOrder.status === 'warehouse_rejected' ? 'KHO TỪ CHỐI ĐƠN' : 'KHO DỜI NGÀY GIAO'}
+                  </span>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Xử lý đơn {warehouseRejectedOrder.orderNo}</h3>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {warehouseRejectedOrder.status === 'warehouse_rejected'
+                      ? 'Kho đã từ chối đơn. Bạn có thể dời ngày hoặc tạo lại đơn mới.'
+                      : 'Kho đã dời ngày giao. Xác nhận để kho giao lại hoặc tạo đơn mới.'}
+                  </p>
+                </div>
+                <button onClick={() => setWarehouseRejectedOrder(null)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-700 font-black text-xl hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
+                  ×
+                </button>
+              </div>
+
+              <div className="p-7 space-y-5">
+                {/* Order info */}
+                <div className={`rounded-2xl p-4 border ${
+                  warehouseRejectedOrder.status === 'warehouse_rejected'
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-amber-50 border-amber-200'
+                }`}>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><span className="text-slate-500">Khách hàng:</span> <span className="font-semibold text-slate-800 ml-1">{warehouseRejectedOrder.customer?.name || '-'}</span></div>
+                    <div><span className="text-slate-500">Mã đơn:</span> <span className="font-mono font-semibold text-blue-600 ml-1">{warehouseRejectedOrder.orderNo}</span></div>
+                    <div><span className="text-slate-500">Ngày đặt:</span> <span className="font-semibold text-slate-800 ml-1">{dayjs(warehouseRejectedOrder.orderDate).format('DD/MM/YYYY')}</span></div>
+                    <div><span className="text-slate-500">Dự kiến giao:</span> <span className="font-semibold text-slate-800 ml-1">{warehouseRejectedOrder.expectedDeliveryDate ? dayjs(warehouseRejectedOrder.expectedDeliveryDate).format('DD/MM/YYYY') : '—'}</span></div>
+                  </div>
+                  {warehouseRejectedOrder.note && (
+                    <div className="mt-3 pt-3 border-t border-slate-200/60">
+                      <span className="text-xs font-bold text-slate-500">Lý do kho:</span>
+                      <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{warehouseRejectedOrder.note}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action choices */}
+                <div className="space-y-3">
+                  <p className="text-sm font-bold text-slate-700">Chọn hành động:</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Option 1: Xác nhận dời ngày */}
+                    <button
+                      onClick={() => setWrAction('confirm_delay')}
+                      className={`rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
+                        wrAction === 'confirm_delay'
+                          ? 'border-amber-400 bg-amber-50 shadow-md'
+                          : 'border-slate-200 bg-white hover:border-amber-200 hover:bg-amber-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                          wrAction === 'confirm_delay' ? 'bg-amber-400 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/></svg>
+                        </div>
+                        <span className="font-extrabold text-slate-900">Dời ngày giao</span>
+                      </div>
+                      <p className="text-xs text-slate-500">Giữ thông tin hiện tại, cập nhật ngày giao mới. Đơn quay về chờ duyệt.</p>
+                    </button>
+
+                    {/* Option 2: Tạo lại đơn */}
+                    <button
+                      onClick={() => setWrAction('recreate')}
+                      className={`rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
+                        wrAction === 'recreate'
+                          ? 'border-orange-400 bg-orange-50 shadow-md'
+                          : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                          wrAction === 'recreate' ? 'bg-orange-400 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/></svg>
+                        </div>
+                        <span className="font-extrabold text-slate-900">Tạo lại đơn</span>
+                      </div>
+                      <p className="text-xs text-slate-500">Mở form tạo đơn mới với mã cũ đã bị xóa. Thông tin sản phẩm được giữ lại.</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Date picker for confirm_delay */}
+                {wrAction === 'confirm_delay' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Ngày giao mới (Demo: có thể chọn hôm nay)</label>
+                    <input
+                      type="date"
+                      value={wrExpectedDate}
+                      onChange={e => setWrExpectedDate(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-amber-300 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
+                    />
+                    <p className="text-xs text-amber-600 mt-2">Đơn sẽ quay về trạng thái "Chờ duyệt". Logistics sẽ xử lý lại.</p>
+                  </div>
+                )}
+
+                {wrAction === 'recreate' && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
+                    <p className="text-sm font-bold text-slate-800 mb-1">Tạo lại đơn hàng</p>
+                    <p className="text-xs text-slate-500">Nhấn "Tạo lại đơn" sẽ mở form với thông tin sản phẩm được giữ lại. Bạn có thể chỉnh sửa và gửi lại.</p>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button variant="outline" onClick={() => setWarehouseRejectedOrder(null)}>Đóng</Button>
+                  <button
+                    onClick={handleWarehouseRejectConfirm}
+                    className={`px-6 py-2.5 rounded-2xl font-extrabold text-white shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer ${
+                      wrAction === 'confirm_delay'
+                        ? 'bg-gradient-to-r from-amber-600 to-orange-500'
+                        : 'bg-gradient-to-r from-orange-600 to-red-500'
+                    }`}
+                  >
+                    {wrAction === 'confirm_delay' ? '✓ Xác nhận dời ngày' : '+ Tạo lại đơn'}
                   </button>
                 </div>
               </div>

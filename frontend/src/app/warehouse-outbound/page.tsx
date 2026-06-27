@@ -21,9 +21,11 @@ type TabKey = 'outbound' | 'pending';
 const STATUS_STYLE = (status: string) => {
   const map: Record<string, { bg: string; color: string; label: string }> = {
     warehouse_processing: { bg: '#dbeafe', color: '#1d4ed8', label: 'Kho đang xuất' },
+    warehouse_rejected:  { bg: '#fee2e2', color: '#b91c1c', label: 'Kho từ chối' },
+    warehouse_delayed:   { bg: '#fef3c7', color: '#92400e', label: 'Dời ngày' },
     shipping:            { bg: '#f3e8ff', color: '#6b21a8', label: 'Đang giao' },
     logistics_review:    { bg: '#ede9fe', color: '#6d28d9', label: 'Logistics duyệt' },
-    returned:            { bg: '#fee2e2', color: '#b91c1c', label: 'Bị từ chối' },
+    returned:            { bg: '#fee2e2', color: '#b91c1c', label: 'Hoàn trả' },
     completed:           { bg: '#d1fae5', color: '#047857', label: 'Hoàn thành' },
     canceled:            { bg: '#f3f4f6', color: '#4b5563', label: 'Đã hủy' },
   };
@@ -131,6 +133,7 @@ export default function WarehouseOutboundPage() {
     if (showLoading) setPendingLoading(true);
     try {
       const res = await stockOutboundService.getPendingRequests();
+      // Lọc hiển thị: warehouse_processing + warehouse_rejected + warehouse_delayed
       setPendingOrders(res.data || []);
     } catch (e) { console.error(e); }
     finally { setPendingLoading(false); }
@@ -354,14 +357,14 @@ export default function WarehouseOutboundPage() {
                 { label: 'Tổng đơn', value: pendingOrders.length, bg: '#dbeafe', color: '#1d4ed8', icon: (
                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd"/></svg>
                 )},
-                { label: 'Kho đang xuất', value: pendingOrders.filter(o => o.status === 'warehouse_processing').length, bg: '#ede9fe', color: '#6d28d9', icon: (
+                { label: 'Kho đang xuất', value: pendingOrders.filter(o => o.status === 'warehouse_processing').length, bg: '#dbeafe', color: '#1d4ed8', icon: (
                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M5 2a2 2 0 00-2 2v14l3.5-2 3.5 2 3.5-2 3.5 2V4a2 2 0 00-2-2H5zm2.5 3a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm6.207.293a1 1 0 00-1.414 0l-6 6a1 1 0 101.414 1.414l6-6a1 1 0 000-1.414zM12.5 10a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clipRule="evenodd"/></svg>
                 )},
-                { label: 'Đang giao', value: pendingOrders.filter(o => o.status === 'shipping').length, bg: '#f3e8ff', color: '#6b21a8', icon: (
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" clipRule="evenodd"/></svg>
+                { label: 'Kho từ chối', value: pendingOrders.filter(o => o.status === 'warehouse_rejected').length, bg: '#fee2e2', color: '#b91c1c', icon: (
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/></svg>
                 )},
-                { label: 'Hoàn tất', value: pendingOrders.filter(o => ['completed','canceled','returned'].includes(o.status)).length, bg: '#d1fae5', color: '#047857', icon: (
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
+                { label: 'Dời ngày giao', value: pendingOrders.filter(o => o.status === 'warehouse_delayed').length, bg: '#fef3c7', color: '#92400e', icon: (
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/></svg>
                 )},
               ].map((s, i) => (
                 <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
@@ -431,12 +434,21 @@ export default function WarehouseOutboundPage() {
                                 {o.status === 'warehouse_processing' && (
                                   <>
                                     <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 h-7" onClick={() => openCreateForOrder(o)}>
-                                      Chọn kho & xuất
+                                      Chọn kho &amp; xuất
                                     </Button>
                                     <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 text-xs px-3 py-1.5 h-7" onClick={() => openRespondForOrder(o)}>
-                                      Từ chối/Delay
+                                      Từ chối / Dời ngày
                                     </Button>
                                   </>
+                                )}
+                                {(o.status === 'warehouse_rejected' || o.status === 'warehouse_delayed') && (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+                                    style={{
+                                      backgroundColor: o.status === 'warehouse_rejected' ? '#fee2e2' : '#fef3c7',
+                                      color: o.status === 'warehouse_rejected' ? '#b91c1c' : '#92400e',
+                                    }}>
+                                    {o.status === 'warehouse_rejected' ? '⏳ Chờ Sale xử lý' : '⏳ Chờ Sale xác nhận'}
+                                  </span>
                                 )}
                               </div>
                             </td>
@@ -565,64 +577,106 @@ export default function WarehouseOutboundPage() {
         </div>
       </Modal>
 
-      {/* ════════════════════════ MODAL: PHẢN HỒI TỪ KHO ════════════════════════ */}
-      <Modal open={showRespondModal} onClose={() => setShowRespondModal(false)} title="Phản hồi từ kho" size="md">
-        <div className="space-y-4">
-          {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
-
-          {selectedOrder && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm">
-              <span className="text-slate-500">Đơn hàng:</span>
-              <span className="font-mono font-semibold text-slate-800 ml-1">{selectedOrder.orderNo}</span>
-              <span className="text-slate-400 mx-2">·</span>
-              <span className="text-slate-700">{selectedOrder.customer?.name}</span>
-            </div>
-          )}
-
-          {/* Action tabs */}
-          <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
-            {[
-              { value: 'reject', label: 'Từ chối', activeColor: 'bg-white text-red-700 shadow-sm' },
-              { value: 'delay',  label: 'Trì hoãn',  activeColor: 'bg-white text-amber-700 shadow-sm' },
-            ].map(a => (
-              <button
-                key={a.value}
-                onClick={() => setRespondForm(f => ({ ...f, action: a.value as 'reject' | 'delay' }))}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${respondForm.action === a.value ? a.activeColor : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                {a.label}
+      {/* ════════════════════════ MODAL: PHẢN HỒI TỪ KHO (TỪ CHỐI / DỜI NGÀY) ════════════════════════ */}
+      {showRespondModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          style={{ animation: 'fadeIn 180ms ease-out' }}>
+          <div className="bg-white rounded-3xl border border-red-200 w-full max-w-lg p-7 shadow-2xl"
+            style={{ animation: 'scaleIn 220ms ease-out' }}>
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold mb-2">
+                  KHO XỬ LÝ ĐƠN
+                </span>
+                <h3 className="text-xl font-black text-slate-900 mt-1">Phản hồi từ kho</h3>
+                <p className="text-sm text-slate-500 mt-1">Kho xử lý đơn {selectedOrder?.orderNo}</p>
+              </div>
+              <button onClick={() => setShowRespondModal(false)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
+                ×
               </button>
-            ))}
-          </div>
-
-          {respondForm.action === 'reject' ? (
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Lý do từ chối <span className="text-red-500">*</span></label>
-              <textarea
-                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 resize-none"
-                rows={3}
-                placeholder="VD: Hàng không đủ số lượng trong kho..."
-                value={respondForm.reason}
-                onChange={e => setRespondForm(f => ({ ...f, reason: e.target.value }))}
-              />
             </div>
-          ) : (
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Ngày dự kiến xuất <span className="text-red-500">*</span></label>
-              <Input
-                type="date"
-                value={respondForm.expectedDate}
-                onChange={e => setRespondForm(f => ({ ...f, expectedDate: e.target.value }))}
-              />
-            </div>
-          )}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => setShowRespondModal(false)}>Hủy</Button>
-            <Button onClick={handleRespond} loading={saving}>Gửi phản hồi</Button>
+            {selectedOrder && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm mb-5">
+                <div className="flex items-center gap-2">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/></svg>
+                  <span className="font-semibold text-slate-800">{selectedOrder.customer?.name}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 mt-2 text-slate-600">
+                  <div><span className="text-slate-500">Mã đơn:</span> <span className="font-mono font-semibold ml-1">{selectedOrder.orderNo}</span></div>
+                  <div><span className="text-slate-500">Dự kiến:</span> <span className="ml-1">{selectedOrder.expectedDeliveryDate ? dayjs(selectedOrder.expectedDeliveryDate).format('DD/MM/YYYY') : '—'}</span></div>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold">
+                {error}
+              </div>
+            )}
+
+            {/* Action tabs */}
+            <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4">
+              {[
+                { value: 'reject', label: 'Từ chối', desc: 'Báo Sale xem xét lại', color: 'bg-white text-red-700 shadow-sm' },
+                { value: 'delay',  label: 'Dời ngày',  desc: 'Giao trong ngày khác', color: 'bg-white text-amber-700 shadow-sm' },
+              ].map(a => (
+                <button
+                  key={a.value}
+                  onClick={() => setRespondForm(f => ({ ...f, action: a.value as 'reject' | 'delay' }))}
+                  className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all ${respondForm.action === a.value ? a.color : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  <div>{a.label}</div>
+                  <div className="text-xs font-normal opacity-70">{a.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            {respondForm.action === 'reject' ? (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Lý do từ chối <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 resize-none"
+                  rows={3}
+                  placeholder="VD: Thiếu hàng trong kho, cần đặt thêm từ nhà máy..."
+                  value={respondForm.reason}
+                  onChange={e => setRespondForm(f => ({ ...f, reason: e.target.value }))}
+                />
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Đơn sẽ chuyển trạng thái <strong className="text-red-600">"Kho từ chối"</strong>. Sale sẽ xem xét và sửa lại hoặc tạo lại đơn.
+                </p>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Ngày giao mới <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="date"
+                  value={respondForm.expectedDate}
+                  onChange={e => setRespondForm(f => ({ ...f, expectedDate: e.target.value }))}
+                />
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Đơn sẽ chuyển trạng thái <strong className="text-amber-600">"Dời ngày"</strong>. Sale xác nhận dời ngày để kho giao lại.
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" onClick={() => setShowRespondModal(false)}>Hủy</Button>
+              <Button
+                onClick={handleRespond}
+                loading={saving}
+                className={respondForm.action === 'reject' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-amber-600 hover:bg-amber-700 text-white'}
+              >
+                {respondForm.action === 'reject' ? 'Từ chối đơn' : 'Xác nhận dời ngày'}
+              </Button>
+            </div>
           </div>
         </div>
-      </Modal>
+      )}
 
       {/* ════════════════════════ MODAL: CHI TIẾT ĐƠN HÀNG (từ tab pending) ════════════════════════ */}
       <Modal open={showOrderDetailModal} onClose={() => setShowOrderDetailModal(false)} title="Chi tiết đơn hàng" size="lg">

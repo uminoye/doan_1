@@ -56,12 +56,13 @@ model Customer {
 }
 
 model Warehouse {
-  id             String   @id @default(uuid())
-  warehouseCode  String   @unique
-  name           String
-  location       String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  warehouseCode          String   @unique
+  name                  String
+  location              String?
+  isDefectiveWarehouse  Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   // Relations
   productionReceipts     ProductionReceipt[]
@@ -158,6 +159,7 @@ model SalesOrder {
   items       SalesOrderItem[]
   delivery    DeliveryRequest?
   outboundNote StockOutboundNote?
+  shipment    Shipment?
 
   @@index([customerId])
   @@index([orderDate])
@@ -231,6 +233,61 @@ model StockOutboundItem {
   product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([outboundNoteId])
+}
+
+// ============== CARRIERS (ĐƠN VỊ VẬN CHUYỂN) ==============
+
+model Carrier {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  autoPrefix  String   @default("")
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shipments   Shipment[]
+}
+
+// ============== SHIPMENT TRACKING (THEO DÕI GIAO HÀNG) ==============
+
+model Shipment {
+  id                String    @id @default(uuid())
+  salesOrderId      String    @unique
+  carrierId         String
+  trackingNo        String    @default("")
+  shippingFee       Decimal   @default(0)
+  currentStep       Int       @default(0)
+  status            String    @default("warehouse_processing")
+  startedAt         DateTime  @default(now())
+  completedAt       DateTime?
+  customerRejected  Boolean   @default(false)
+  rejectionReason   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  carrier    Carrier    @relation(fields: [carrierId], references: [id])
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id])
+
+  @@index([salesOrderId])
+  @@index([carrierId])
+}
+
+// ============== NOTIFICATIONS (THÔNG BÁO LỖI VẬN CHUYỂN) ==============
+
+model Notification {
+  id         String   @id @default(uuid())
+  type       String
+  orderId    String?
+  shipmentId String?
+  title      String
+  message    String
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([type])
 }
 
 // ============== INVENTORY ==============

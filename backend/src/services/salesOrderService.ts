@@ -110,8 +110,8 @@ export class SalesOrderService {
   }) {
     const order = await prisma.salesOrder.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new Error('Không tìm thấy đơn hàng');
-    if (!['pending', 'logistics_rejected'].includes(order.status)) {
-      throw new Error('Chỉ có thể sửa đơn ở trạng thái chờ duyệt hoặc bị từ chối');
+    if (!['pending', 'logistics_rejected', 'warehouse_rejected', 'warehouse_delayed'].includes(order.status)) {
+      throw new Error('Chỉ có thể sửa đơn ở trạng thái chờ duyệt hoặc bị từ chối / dời ngày');
     }
     if (!data.items || data.items.length === 0) {
       throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');
@@ -290,7 +290,6 @@ export class SalesOrderService {
     if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
 
     if (order.outboundNote) {
-      // ĐÃ xuất kho → hoàn trả tồn
       const warehouseId = order.outboundNote.warehouseId;
       await prisma.$transaction(async (tx) => {
         for (const item of order.items) {
@@ -325,7 +324,6 @@ export class SalesOrderService {
       });
       return { message: 'Bom hàng: đã hoàn trả tồn kho và hủy đơn!' };
     } else {
-      // CHƯA xuất kho → chỉ đổi trạng thái
       await prisma.$transaction(async (tx) => {
         await tx.salesOrder.update({
           where: { id: salesOrderId },
@@ -338,5 +336,124 @@ export class SalesOrderService {
       });
       return { message: 'Đơn hàng chuyển sang trạng thái hoàn trả!' };
     }
+  }
+
+  /** Kho từ chối đơn → Sale xem xét lại */
+  async warehouseReject(salesOrderId: string, reason: string) {
+    const order = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'warehouse_processing') {
+      throw new AppError(400, 'Đơn phải ở trạng thái kho đang xử lý');
+    }
+
+    const note = `[KHO TỪ CHỐI]: ${reason}`;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: { status: 'warehouse_rejected', note },
+      });
+      await tx.deliveryRequest.updateMany({
+        where: { salesOrderId },
+        data: { status: 'warehouse_rejected', note },
+      });
+      await tx.stockOutboundNote.updateMany({
+        where: { salesOrderId },
+        data: { status: 'rejected', warehouseNote: reason },
+      });
+    });
+
+    return { message: 'Kho đã từ chối đơn. Sale sẽ xem xét lại.' };
+  }
+
+  /** Kho dời ngày giao → Sale xác nhận hoặc tạo lại đơn */
+  async warehouseDelay(salesOrderId: string, newExpectedDate: string) {
+    const order = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'warehouse_processing') {
+      throw new AppError(400, 'Đơn phải ở trạng thái kho đang xử lý');
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: { status: 'warehouse_delayed', expectedDeliveryDate: new Date(newExpectedDate) },
+      });
+      await tx.deliveryRequest.updateMany({
+        where: { salesOrderId },
+        data: { status: 'warehouse_delayed' },
+      });
+      await tx.stockOutboundNote.updateMany({
+        where: { salesOrderId },
+        data: { status: 'delayed', warehouseNote: `Dời ngày giao đến ${newExpectedDate}` },
+      });
+    });
+
+    return { message: `Đã dời ngày giao đến ${newExpectedDate}. Sale sẽ xác nhận hoặc tạo lại đơn.` };
+  }
+
+  /** Sale xác nhận dời ngày → đơn quay về pending để kho giao lại */
+  async confirmDelay(salesOrderId: string) {
+    const order = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
+    if (!order) throw new AppError(404, 'Không tìm thấy đơn hàng');
+    if (order.status !== 'warehouse_delayed') {
+      throw new AppError(400, 'Đơn không ở trạng thái dời ngày');
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: { status: 'pending' },
+      });
+      await tx.deliveryRequest.updateMany({
+        where: { salesOrderId },
+        data: { status: 'pending' },
+      });
+      await tx.stockOutboundNote.updateMany({
+        where: { salesOrderId },
+        data: { status: 'pending' },
+      });
+    });
+
+    return { message: 'Đơn đã quay về trạng thái chờ duyệt. Logistics sẽ xử lý lại.' };
+  }
+
+  /** Sale lập lại đơn (dùng lại mã đơn cũ đã bị xóa) */
+  async recreateOrder(salesOrderId: string, data: {
+    customerId: string;
+    expectedDeliveryDate?: string;
+    note?: string;
+    createdById: string;
+    items: { productId: string; quantity: number; unitPrice?: number }[];
+  }) {
+    const oldOrder = await prisma.salesOrder.findUnique({ where: { id: salesOrderId } });
+    if (!oldOrder) throw new AppError(404, 'Không tìm thấy đơn hàng gốc');
+    if (!['warehouse_rejected'].includes(oldOrder.status)) {
+      throw new AppError(400, 'Chỉ có thể lập lại đơn ở trạng thái bị kho từ chối');
+    }
+    if (!data.items || data.items.length === 0) {
+      throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');
+    }
+
+    const order = await prisma.salesOrder.create({
+      data: {
+        orderNo: oldOrder.orderNo, // reuse old code
+        customerId: data.customerId,
+        orderDate: new Date(),
+        expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
+        note: data.note,
+        status: 'pending',
+        createdById: data.createdById,
+        items: {
+          create: data.items.map(item => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice || 0,
+          })),
+        },
+      },
+    });
+
+    return this.getById(order.id);
   }
 }

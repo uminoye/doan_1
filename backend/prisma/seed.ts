@@ -121,7 +121,26 @@ async function main() {
   }
   console.log('✅ Customers created');
 
-  // ===== INITIAL INVENTORY =====
+  // ===== CARRIERS =====
+  const carriers = [
+    { name: 'Xe Công Ty (Nội bộ)', code: 'XCT', autoPrefix: 'XCT', isDefault: true },
+    { name: 'Giao Hàng Tiết Kiệm', code: 'GHTK', autoPrefix: 'GHTK', isDefault: false },
+    { name: 'Viettel Post', code: 'VTP', autoPrefix: 'VTP', isDefault: false },
+    { name: 'Grab Express', code: 'GE', autoPrefix: 'GE', isDefault: false },
+    { name: 'Ahamove', code: 'AHM', autoPrefix: 'AHM', isDefault: false },
+  ];
+  for (const c of carriers) {
+    await prisma.carrier.upsert({ where: { code: c.code }, update: {}, create: c });
+  }
+  console.log('✅ Carriers created');
+
+  // ===== DEFECTIVE WAREHOUSE =====
+  await prisma.warehouse.upsert({
+    where: { warehouseCode: 'KHO004' },
+    update: {},
+    create: { warehouseCode: 'KHO004', name: 'Kho Hàng Lỗi - Phân Loại', location: 'Khu vực phân loại', isDefectiveWarehouse: true },
+  });
+  console.log('✅ Defective warehouse created');
   const hanoiWh = createdWarehouses[0];
   for (const product of createdProducts) {
     await prisma.inventoryBalance.upsert({

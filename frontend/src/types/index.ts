@@ -241,10 +241,13 @@ export const ORDER_STATUS_COLORS: Record<string, string> = {
   logistics_rejected: 'bg-red-100 text-red-700',
   logistics_review: 'bg-orange-100 text-orange-700',
   warehouse_processing: 'bg-orange-100 text-orange-700',
+  warehouse_rejected: 'bg-red-100 text-red-700',
+  warehouse_delayed: 'bg-amber-100 text-amber-700',
   shipping: 'bg-purple-100 text-purple-700',
   completed: 'bg-green-100 text-green-700',
   returned: 'bg-red-100 text-red-700',
   canceled: 'bg-gray-200 text-gray-500',
+  delivery_failed: 'bg-red-100 text-red-700',
 };
 
 export const RECEIPT_STATUS_LABELS: Record<string, string> = {
@@ -277,4 +280,57 @@ export const DELIVERY_STATUS_LABELS: Record<string, string> = {
 export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   IN: 'Nhập kho',
   OUT: 'Xuất kho',
+};
+
+// ===== NEW MODELS FOR DELIVERY PIPELINE =====
+
+export interface Carrier {
+  id: string;
+  name: string;
+  code: string;
+  autoPrefix: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface Shipment {
+  id: string;
+  salesOrderId: string;
+  carrierId: string;
+  carrier?: Carrier;
+  trackingNo: string;
+  shippingFee: number;
+  currentStep: number;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  customerRejected: boolean;
+  rejectionReason?: string;
+  salesOrder?: SalesOrder;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  orderId?: string;
+  shipmentId?: string;
+  title: string;
+  message: string;
+  status: string;
+  createdAt: string;
+}
+
+export const SHIPMENT_STEP_LABELS: Record<number, string> = {
+  0: 'Kho đang xử lý',
+  1: 'Đơn vị vận chuyển đã lấy hàng',
+  2: 'Đã đến kho khu vực',
+  3: 'Đang trên đường giao đến bạn',
+  4: 'Giao thành công',
+};
+
+export const ORDER_STATUS_LABELS_V2: Record<string, string> = {
+  ...ORDER_STATUS_LABELS,
+  warehouse_rejected: 'Kho từ chối',
+  warehouse_delayed: 'Dời ngày',
+  delivery_failed: 'Lỗi vận chuyển',
 };

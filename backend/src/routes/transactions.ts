@@ -4,13 +4,39 @@ import {
   salesOrderController,
   logisticsController,
   stockOutboundController,
+  carrierController,
+  notificationController,
+  shipmentController,
 } from '../controllers/transactionController';
 import { authenticate, authorize } from '../middlewares/auth';
 
 const router = Router();
 router.use(authenticate);
 
-// Sales Orders
+// ===== Carriers =====
+router.get('/carriers', carrierController.getAll);
+router.get('/carriers/:id', carrierController.getById);
+router.post('/carriers', authorize('admin', 'logistics'), carrierController.create);
+router.put('/carriers/:id', authorize('admin', 'logistics'), carrierController.update);
+router.delete('/carriers/:id', authorize('admin', 'logistics'), carrierController.delete);
+
+// ===== Notifications =====
+router.get('/notifications', notificationController.getAll);
+router.get('/notifications/:id', notificationController.getById);
+router.post('/notifications/:id/resolve', authorize('admin', 'logistics', 'warehouse'), notificationController.resolve);
+router.delete('/notifications/:id', authorize('admin'), notificationController.delete);
+
+// ===== Shipments =====
+router.get('/shipments/tracking', authorize('admin', 'logistics'), shipmentController.getAllTracking);
+router.get('/shipments/steps', shipmentController.getSteps);
+router.get('/shipments/rejection-reasons', shipmentController.getRejectionReasons);
+router.get('/shipments/:salesOrderId', shipmentController.getByOrderId);
+router.post('/shipments', authorize('admin', 'logistics'), shipmentController.create);
+router.post('/shipments/:salesOrderId/advance', authorize('admin', 'logistics'), shipmentController.advanceStep);
+router.post('/shipments/:salesOrderId/confirm-received', authorize('admin', 'logistics'), shipmentController.confirmReceived);
+router.post('/shipments/:salesOrderId/customer-reject', authorize('admin', 'logistics'), shipmentController.customerReject);
+
+// ===== Sales Orders
 router.get('/sales-orders', salesOrderController.getAll);
 router.get('/sales-orders/:id', salesOrderController.getById);
 router.post('/sales-orders', authorize('admin', 'sales'), salesOrderController.create);
@@ -20,6 +46,10 @@ router.post('/sales-orders/:id/report-issue', authorize('admin', 'warehouse'), s
 router.post('/sales-orders/:id/export', authorize('admin', 'warehouse'), salesOrderController.exportOrder);
 router.post('/sales-orders/:id/confirm-delivery', authorize('admin', 'logistics'), salesOrderController.confirmDelivery);
 router.post('/sales-orders/:id/return-inventory', authorize('admin', 'logistics'), salesOrderController.returnInventory);
+router.post('/sales-orders/:id/warehouse-reject', authorize('admin', 'warehouse'), salesOrderController.warehouseReject);
+router.post('/sales-orders/:id/warehouse-delay', authorize('admin', 'warehouse'), salesOrderController.warehouseDelay);
+router.post('/sales-orders/:id/confirm-delay', authorize('admin', 'sales'), salesOrderController.confirmDelay);
+router.post('/sales-orders/:id/recreate', authorize('admin', 'sales'), salesOrderController.recreateOrder);
 router.delete('/sales-orders/:id', authorize('admin', 'sales'), salesOrderController.delete);
 
 // Logistics
@@ -33,7 +63,7 @@ router.get('/stock-outbound', authorize('admin', 'warehouse'), stockOutboundCont
 router.get('/stock-outbound/pending', authorize('admin', 'warehouse'), stockOutboundController.getPendingRequests);
 router.get('/stock-outbound/:id', stockOutboundController.getById);
 router.post('/stock-outbound', authorize('admin', 'warehouse'), stockOutboundController.create);
-router.post('/stock-outbound/:id/respond', authorize('admin', 'warehouse'), stockOutboundController.respondOutbound);
+router.post('/stock-outbound/:salesOrderId/respond', authorize('admin', 'warehouse'), stockOutboundController.respondOutbound);
 router.post('/stock-outbound/:id/cancel', authorize('admin', 'warehouse'), stockOutboundController.cancel);
 router.delete('/stock-outbound/:id', authorize('admin', 'warehouse'), stockOutboundController.delete);
 

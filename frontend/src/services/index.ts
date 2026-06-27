@@ -198,6 +198,23 @@ export const salesOrderService = {
   returnInventory(salesOrderId: string) {
     return api.post(`/transactions/sales-orders/${salesOrderId}/return-inventory`);
   },
+  confirmDelay(salesOrderId: string) {
+    return api.post(`/transactions/sales-orders/${salesOrderId}/confirm-delay`);
+  },
+  recreate(data: {
+    warehouseRejectedOrderId: string;
+    customerId: string;
+    expectedDeliveryDate?: string;
+    note?: string;
+    items: { productId: string; quantity: number; unitPrice?: number }[];
+  }) {
+    return api.post(`/transactions/sales-orders/${data.warehouseRejectedOrderId}/recreate`, {
+      customerId: data.customerId,
+      expectedDeliveryDate: data.expectedDeliveryDate,
+      note: data.note,
+      items: data.items,
+    });
+  },
   delete(id: string) {
     return api.delete(`/transactions/sales-orders/${id}`);
   },
@@ -239,6 +256,60 @@ export const stockOutboundService = {
   },
   delete(id: string) {
     return api.delete(`/transactions/stock-outbound/${id}`);
+  },
+};
+
+export const carrierService = {
+  getAll() {
+    return api.get('/transactions/carriers');
+  },
+  create(data: { name: string; code: string; autoPrefix?: string }) {
+    return api.post('/transactions/carriers', data);
+  },
+  update(id: string, data: { name?: string; autoPrefix?: string }) {
+    return api.put(`/transactions/carriers/${id}`, data);
+  },
+  delete(id: string) {
+    return api.delete(`/transactions/carriers/${id}`);
+  },
+};
+
+export const notificationService = {
+  getAll(params?: { page?: number; limit?: number; type?: string; status?: string }) {
+    return api.get('/transactions/notifications', { params });
+  },
+  resolve(id: string) {
+    return api.post(`/transactions/notifications/${id}/resolve`);
+  },
+  delete(id: string) {
+    return api.delete(`/transactions/notifications/${id}`);
+  },
+};
+
+export const shipmentService = {
+  getAllTracking(params?: { page?: number; limit?: number; status?: string }) {
+    return api.get('/transactions/shipments/tracking', { params });
+  },
+  getSteps() {
+    return api.get('/transactions/shipments/steps');
+  },
+  getRejectionReasons() {
+    return api.get('/transactions/shipments/rejection-reasons');
+  },
+  getByOrderId(salesOrderId: string) {
+    return api.get(`/transactions/shipments/${salesOrderId}`);
+  },
+  create(data: { salesOrderId: string; carrierId: string; trackingNo: string; shippingFee?: number }) {
+    return api.post('/transactions/shipments', data);
+  },
+  advanceStep(salesOrderId: string) {
+    return api.post(`/transactions/shipments/${salesOrderId}/advance`);
+  },
+  confirmReceived(salesOrderId: string) {
+    return api.post(`/transactions/shipments/${salesOrderId}/confirm-received`);
+  },
+  customerReject(salesOrderId: string, reason: string) {
+    return api.post(`/transactions/shipments/${salesOrderId}/customer-reject`, { reason });
   },
 };
 

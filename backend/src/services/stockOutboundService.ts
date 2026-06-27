@@ -53,11 +53,11 @@ export class StockOutboundService {
     return note;
   }
 
-  /** Lấy các đơn đang chờ xuất kho (warehouse_processing) */
+  /** Lấy các đơn đang chờ xuất kho (warehouse_processing + rejected + delayed) */
   async getPendingRequests() {
     const orders = await prisma.salesOrder.findMany({
       where: {
-        status: 'warehouse_processing',
+        status: { in: ['warehouse_processing', 'warehouse_rejected', 'warehouse_delayed'] },
       },
       include: {
         customer: true,
@@ -151,41 +151,60 @@ export class StockOutboundService {
     return { message: 'Xuất kho thành công! Đơn chuyển sang trạng thái Đang giao.' };
   }
 
-  /** Kho từ chối / hẹn ngày (phản hồi lại cho logistics) */
+  /** Kho từ chối / dời ngày — gọi sang SalesOrderService */
   async respondOutbound(data: {
     salesOrderId: string;
     action: 'reject' | 'delay';
     reason?: string;
     expectedDate?: string;
   }) {
-    const newStatus = data.action === 'reject' ? 'returned' : 'delayed';
-    const notePrefix = data.action === 'reject' ? '[KHO TỪ CHỐI]' : '[KHO HẸN GIAO]';
-    const finalNote = `${notePrefix}: ${data.reason || 'Không có lý do'}`;
-
-    await prisma.$transaction(async (tx) => {
-      await tx.salesOrder.update({
-        where: { id: data.salesOrderId },
-        data: { status: newStatus, note: finalNote },
-      });
-
-      await tx.deliveryRequest.updateMany({
-        where: { salesOrderId: data.salesOrderId },
-        data: {
-          status: newStatus,
-          note: finalNote,
-        },
-      });
-
-      await tx.stockOutboundNote.updateMany({
-        where: { salesOrderId: data.salesOrderId },
-        data: {
-          status: data.action === 'reject' ? 'rejected' : 'delayed',
-          warehouseNote: data.reason,
-        },
-      });
+    // Đánh dấu StockOutboundNote
+    await prisma.stockOutboundNote.updateMany({
+      where: { salesOrderId: data.salesOrderId },
+      data: {
+        status: data.action === 'reject' ? 'rejected' : 'delayed',
+        warehouseNote: data.action === 'reject' ? data.reason : `Dời ngày đến ${data.expectedDate}`,
+      },
     });
 
-    return { message: 'Đã gửi phản hồi từ Kho thành công!' };
+    if (data.action === 'reject') {
+      // Gọi service mới → salesOrder status = warehouse_rejected
+      return this._warehouseReject(data.salesOrderId, data.reason || 'Kho từ chối');
+    } else {
+      return this._warehouseDelay(data.salesOrderId, data.expectedDate || '');
+    }
+  }
+
+  private async _warehouseReject(salesOrderId: string, reason: string) {
+    await prisma.$transaction(async (tx) => {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: { status: 'warehouse_rejected', note: `[KHO TỪ CHỐI]: ${reason}` },
+      });
+      await tx.deliveryRequest.updateMany({
+        where: { salesOrderId },
+        data: { status: 'warehouse_rejected', note: `[KHO TỪ CHỐI]: ${reason}` },
+      });
+    });
+    return { message: 'Kho đã từ chối đơn. Sale sẽ xem xét lại.' };
+  }
+
+  private async _warehouseDelay(salesOrderId: string, newDate: string) {
+    await prisma.$transaction(async (tx) => {
+      await tx.salesOrder.update({
+        where: { id: salesOrderId },
+        data: {
+          status: 'warehouse_delayed',
+          note: `[KHO DỜI NGÀY]: Giao lúc ${newDate}`,
+          expectedDeliveryDate: new Date(newDate),
+        },
+      });
+      await tx.deliveryRequest.updateMany({
+        where: { salesOrderId },
+        data: { status: 'warehouse_delayed' },
+      });
+    });
+    return { message: `Đã dời ngày giao đến ${newDate}. Sale sẽ xác nhận hoặc tạo lại đơn.` };
   }
 
   async cancel(id: string) {

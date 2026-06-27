@@ -4,6 +4,9 @@ import { SalesOrderService } from '../services/salesOrderService';
 import { LogisticsService } from '../services/logisticsService';
 import { StockOutboundService } from '../services/stockOutboundService';
 import { ReportService } from '../services/reportService';
+import { CarrierService } from '../services/carrierService';
+import { NotificationService } from '../services/notificationService';
+import { ShipmentService } from '../services/shipmentService';
 import { asyncHandler } from '../middlewares/errorHandler';
 
 const productionReceiptService = new ProductionReceiptService();
@@ -11,6 +14,9 @@ const salesOrderService = new SalesOrderService();
 const logisticsService = new LogisticsService();
 const stockOutboundService = new StockOutboundService();
 const reportService = new ReportService();
+const carrierService = new CarrierService();
+const notificationService = new NotificationService();
+const shipmentService = new ShipmentService();
 
 // ===== Production Receipt =====
 export const productionReceiptController = {
@@ -97,6 +103,21 @@ export const salesOrderController = {
   returnInventory: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.returnInventory(String(req.params.id)));
   }),
+  warehouseReject: asyncHandler(async (req: Request, res: Response) => {
+    const { reason } = req.body;
+    res.json(await salesOrderService.warehouseReject(String(req.params.id), reason));
+  }),
+  warehouseDelay: asyncHandler(async (req: Request, res: Response) => {
+    const { newExpectedDate } = req.body;
+    res.json(await salesOrderService.warehouseDelay(String(req.params.id), newExpectedDate));
+  }),
+  confirmDelay: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await salesOrderService.confirmDelay(String(req.params.id)));
+  }),
+  recreateOrder: asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.userId;
+    res.status(201).json(await salesOrderService.recreateOrder(String(req.params.id), { ...req.body, createdById: userId }));
+  }),
   delete: asyncHandler(async (req: Request, res: Response) => {
     res.json(await salesOrderService.delete(String(req.params.id)));
   }),
@@ -159,7 +180,12 @@ export const stockOutboundController = {
     res.status(201).json(result);
   }),
   respondOutbound: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await stockOutboundService.respondOutbound({ ...req.body, salesOrderId: String(req.params.id) }));
+    res.json(await stockOutboundService.respondOutbound({
+      salesOrderId: String(req.params.salesOrderId),
+      action: req.body.action,
+      reason: req.body.reason,
+      expectedDate: req.body.expectedDate,
+    }));
   }),
   cancel: asyncHandler(async (req: Request, res: Response) => {
     res.json(await stockOutboundService.cancel(String(req.params.id)));
@@ -210,5 +236,80 @@ export const reportController = {
   }),
   getDashboard: asyncHandler(async (_req: Request, res: Response) => {
     res.json(await reportService.getDashboardStats());
+  }),
+};
+
+// ===== Carrier =====
+export const carrierController = {
+  getAll: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await carrierService.getAll());
+  }),
+  getById: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await carrierService.getById(String(req.params.id)));
+  }),
+  create: asyncHandler(async (req: Request, res: Response) => {
+    res.status(201).json(await carrierService.create(req.body));
+  }),
+  update: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await carrierService.update(String(req.params.id), req.body));
+  }),
+  delete: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await carrierService.delete(String(req.params.id)));
+  }),
+};
+
+// ===== Notification =====
+export const notificationController = {
+  getAll: asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit, type, status } = req.query;
+    res.json(await notificationService.getAll({
+      page: page ? parseInt(page as string) : undefined,
+      limit: limit ? parseInt(limit as string) : undefined,
+      type: type as string,
+      status: status as string,
+    }));
+  }),
+  getById: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await notificationService.getById(String(req.params.id)));
+  }),
+  resolve: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await notificationService.resolve(String(req.params.id)));
+  }),
+  delete: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await notificationService.delete(String(req.params.id)));
+  }),
+};
+
+// ===== Shipment =====
+export const shipmentController = {
+  getAllTracking: asyncHandler(async (req: Request, res: Response) => {
+    const { page, limit, status } = req.query;
+    res.json(await shipmentService.getAllTracking({
+      page: page ? parseInt(page as string) : undefined,
+      limit: limit ? parseInt(limit as string) : undefined,
+      status: status as string,
+    }));
+  }),
+  getSteps: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await shipmentService.getSteps());
+  }),
+  getRejectionReasons: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await shipmentService.getRejectionReasons());
+  }),
+  getByOrderId: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await shipmentService.getByOrderId(String(req.params.salesOrderId)));
+  }),
+  create: asyncHandler(async (req: Request, res: Response) => {
+    res.status(201).json(await shipmentService.createShipment(req.body));
+  }),
+  advanceStep: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await shipmentService.advanceStep(String(req.params.salesOrderId)));
+  }),
+  confirmReceived: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await shipmentService.confirmReceived(String(req.params.salesOrderId)));
+  }),
+  customerReject: asyncHandler(async (req: Request, res: Response) => {
+    const { reason } = req.body;
+    res.json(await shipmentService.customerReject(String(req.params.salesOrderId), reason));
   }),
 };
