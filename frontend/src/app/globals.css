@@ -1,12 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 249, 250, 251;
-  --background-end-rgb: 255, 255, 255;
-}
+@import 'remixicon/fonts/remixicon.css';
 
 * {
   box-sizing: border-box;
@@ -14,16 +6,22 @@
   margin: 0;
 }
 
-html {
-  scroll-behavior: smooth;
-  overflow-x: hidden;
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background-color: rgb(var(--background-start-rgb));
+  background: #eef2f7;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 /* Scale về mức vừa mắt (tương đương zoom 80%) trên màn lớn */
@@ -38,7 +36,6 @@ a {
   text-decoration: none;
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -54,14 +51,41 @@ a {
   background: #94a3b8;
 }
 
-/* Status badge colors */
-.status-draft { @apply bg-gray-100 text-gray-700; }
-.status-submitted { @apply bg-blue-100 text-blue-700; }
-.status-logistics_received { @apply bg-purple-100 text-purple-700; }
-.status-warehouse_processing { @apply bg-yellow-100 text-yellow-700; }
-.status-completed { @apply bg-green-100 text-green-700; }
-.status-cancelled { @apply bg-red-100 text-red-700; }
-.status-confirmed { @apply bg-green-100 text-green-700; }
-.status-pending { @apply bg-orange-100 text-orange-700; }
-.status-received { @apply bg-blue-100 text-blue-700; }
-.status-forwarded { @apply bg-indigo-100 text-indigo-700; }
+/* Dashboard hover animations */
+.dashboard-hover-card {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.dashboard-hover-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.12);
+  border-color: #cbd5e1;
+}
+
+.dashboard-stat-card:hover > div:first-child {
+  transform: scale(1.06);
+}
+
+/* Modal animations */
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-animate {
+  animation: modalFadeIn 220ms ease-out both;
+}
+.modal-panel-animate {
+  animation: modalScaleIn 220ms ease-out both;
+}
+
+/* Table row animations */
+@keyframes statusRowEnter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.status-table-animate tbody tr {
+  animation: statusRowEnter 420ms ease-out both;
+}

@@ -1,344 +1,135 @@
 import { api } from './api';
-import { AuthResponse, User } from '@/types';
 
 export const authService = {
-  async login(email: string, password: string): Promise<AuthResponse> {
-    const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
-    localStorage.setItem('wms_token', data.token);
-    localStorage.setItem('wms_user', JSON.stringify(data.user));
+  async login(email: string, password: string) {
+    const { data } = await api.post('/auth/login', { email, password });
+    localStorage.setItem('accessToken', data.accessToken);
+    localStorage.setItem('user', JSON.stringify(data.user));
     return data;
   },
   logout() {
-    localStorage.removeItem('wms_token');
-    localStorage.removeItem('wms_user');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('user');
   },
-  getUser(): User | null {
+  getUser() {
     if (typeof window === 'undefined') return null;
-    const user = localStorage.getItem('wms_user');
-    return user ? JSON.parse(user) : null;
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
   },
-  getToken(): string | null {
+  getToken() {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem('wms_token');
+    return localStorage.getItem('accessToken');
   },
-  isAuthenticated(): boolean {
+  isAuthenticated() {
     return !!this.getToken();
-  },
-  getProfile() {
-    return api.get<User>('/auth/profile');
   },
 };
 
 export const userService = {
-  getAll(params?: { page?: number; limit?: number; search?: string; roleId?: string }) {
-    return api.get('/auth/users', { params });
-  },
-  getById(id: string) {
-    return api.get(`/auth/users/${id}`);
-  },
-  create(data: { fullName: string; email: string; password: string; roleId: string }) {
+  getAll() { return api.get('/auth/users'); },
+  create(data: { email: string; password: string; full_name: string; role_id: string }) {
     return api.post('/auth/users', data);
   },
-  update(id: string, data: { fullName?: string; roleId?: string; status?: string }) {
+  update(id: string, data: { full_name?: string; role_id?: string; password?: string }) {
     return api.put(`/auth/users/${id}`, data);
   },
-  delete(id: string) {
-    return api.delete(`/auth/users/${id}`);
-  },
-  getRoles() {
-    return api.get('/auth/roles');
-  },
-};
-
-export const customerService = {
-  getAll(params?: { page?: number; limit?: number; search?: string }) {
-    return api.get('/master/customers', { params });
-  },
-  getById(id: string) {
-    return api.get(`/master/customers/${id}`);
-  },
-  create(data: { customerCode: string; name: string; phone?: string; address?: string; contactPerson?: string }) {
-    return api.post('/master/customers', data);
-  },
-  update(id: string, data: Partial<{ name: string; phone: string; address: string; contactPerson: string }>) {
-    return api.put(`/master/customers/${id}`, data);
-  },
-  delete(id: string) {
-    return api.delete(`/master/customers/${id}`);
-  },
-};
-
-export const warehouseService = {
-  getAll() {
-    return api.get('/master/warehouses');
-  },
-  getById(id: string) {
-    return api.get(`/master/warehouses/${id}`);
-  },
-  create(data: { warehouseCode?: string; name: string; location?: string }) {
-    return api.post('/master/warehouses', data);
-  },
-  update(id: string, data: Partial<{ name: string; location: string }>) {
-    return api.put(`/master/warehouses/${id}`, data);
-  },
-  delete(id: string) {
-    return api.delete(`/master/warehouses/${id}`);
-  },
+  delete(id: string) { return api.delete(`/auth/users/${id}`); },
 };
 
 export const productService = {
-  getAll(params?: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    category?: string;
-    warehouseId?: string;
-    stockStatus?: 'all' | 'low' | 'out';
-  }) {
-    return api.get('/master/products', { params });
-  },
-  getById(id: string) {
-    return api.get(`/master/products/${id}`);
-  },
+  getAll() { return api.get('/products'); },
   create(data: {
-    sku?: string;
-    name: string;
-    unit?: string;
-    category?: string;
-    imageUrl?: string;
-    salePrice?: number;
-    minStock?: number;
-    stockDistribution?: Record<string, number>;
+    sku: string; name: string; sale_price: number; unit: string;
+    category?: string; image_url?: string; min_stock?: number;
+    initial_stock?: number; warehouse_id?: string;
   }) {
-    return api.post('/master/products', data);
+    return api.post('/products', data);
   },
-  update(id: string, data: Partial<{
-    name: string;
-    unit: string;
-    category: string;
-    imageUrl: string;
-    salePrice: number;
-    minStock: number;
-    stockDistribution?: Record<string, number>;
-  }>) {
-    return api.put(`/master/products/${id}`, data);
+  update(id: string, data: {
+    sku?: string; name?: string; sale_price?: number; unit?: string;
+    category?: string; image_url?: string; min_stock?: number;
+    adjust_stock?: number; target_warehouse?: string;
+  }) {
+    return api.put(`/products/${id}`, data);
   },
-  delete(id: string) {
-    return api.delete(`/master/products/${id}`);
-  },
-  getCategories() {
-    return api.get('/master/products/categories/list');
-  },
+  delete(id: string) { return api.delete(`/products/${id}`); },
 };
 
-export const categoryService = {
-  getAll() {
-    return api.get('/master/categories');
+export const customerService = {
+  getAll() { return api.get('/customers'); },
+  create(data: { company_name: string; phone?: string; address?: string; contact_person?: string }) {
+    return api.post('/customers', data);
   },
-  create(data: { categoryCode?: string; name: string }) {
-    return api.post('/master/categories', data);
-  },
-  update(id: string, data: { name: string }) {
-    return api.put(`/master/categories/${id}`, data);
-  },
-  delete(id: string) {
-    return api.delete(`/master/categories/${id}`);
-  },
+  delete(id: string) { return api.delete(`/customers/${id}`); },
 };
 
-export const productionReceiptService = {
-  getAll(params?: { page?: number; limit?: number; status?: string; startDate?: string; endDate?: string }) {
-    return api.get('/transactions/production-receipts', { params });
+export const warehouseService = {
+  getAll() { return api.get('/warehouses'); },
+  create(data: { name: string; location?: string }) {
+    return api.post('/warehouses', data);
   },
-  getById(id: string) {
-    return api.get(`/transactions/production-receipts/${id}`);
-  },
-  create(data: { warehouseId: string; receiptDate?: string; note?: string; items: { productId: string; quantity: number }[] }) {
-    return api.post('/transactions/production-receipts', data);
-  },
-  factoryRespond(data: { receiptId: string; action: 'accept' | 'reject'; expectedDeliveryDate?: string; reason?: string }) {
-    return api.post(`/transactions/production-receipts/${data.receiptId}/factory-respond`, data);
-  },
-  confirmReceipt(id: string) {
-    return api.post(`/transactions/production-receipts/${id}/confirm`);
-  },
-  cancel(id: string) {
-    return api.post(`/transactions/production-receipts/${id}/cancel`);
-  },
-  delete(id: string) {
-    return api.delete(`/transactions/production-receipts/${id}`);
-  },
+  delete(id: string) { return api.delete(`/warehouses/${id}`); },
 };
 
 export const salesOrderService = {
-  getAll(params?: { page?: number; limit?: number; status?: string; customerId?: string; startDate?: string; endDate?: string }) {
-    return api.get('/transactions/sales-orders', { params });
-  },
-  getById(id: string) {
-    return api.get(`/transactions/sales-orders/${id}`);
-  },
-  create(data: { customerId: string; orderDate?: string; expectedDeliveryDate?: string; note?: string; items: { productId: string; quantity: number; unitPrice?: number }[] }) {
-    return api.post('/transactions/sales-orders', data);
-  },
-  update(id: string, data: { customerId?: string; expectedDeliveryDate?: string; note?: string; items?: { productId: string; quantity: number; unitPrice?: number }[] }) {
-    return api.put(`/transactions/sales-orders/${id}`, data);
-  },
-  processLogistics(salesOrderId: string, newStatus: string, note?: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/process-logistics`, { newStatus, note });
-  },
-  reportWarehouseIssue(salesOrderId: string, issueNote: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/report-issue`, { issueNote });
-  },
-  exportOrder(salesOrderId: string, warehouseId: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/export`, { warehouseId });
-  },
-  confirmDelivery(salesOrderId: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/confirm-delivery`);
-  },
-  returnInventory(salesOrderId: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/return-inventory`);
-  },
-  confirmDelay(salesOrderId: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/confirm-delay`);
-  },
-  resendToWarehouse(salesOrderId: string, newExpectedDate: string) {
-    return api.post(`/transactions/sales-orders/${salesOrderId}/resend-to-warehouse`, { newExpectedDate });
-  },
-  recreate(data: {
-    warehouseRejectedOrderId: string;
-    customerId: string;
-    expectedDeliveryDate?: string;
-    note?: string;
-    items: { productId: string; quantity: number; unitPrice?: number }[];
+  getAll() { return api.get('/orders'); },
+  getItems(id: string) { return api.get(`/orders/${id}/items`); },
+  create(data: {
+    order_no: string; customer_id: string; order_date?: string;
+    expected_delivery_date?: string; note?: string; items: any[];
   }) {
-    return api.post(`/transactions/sales-orders/${data.warehouseRejectedOrderId}/recreate`, {
-      customerId: data.customerId,
-      expectedDeliveryDate: data.expectedDeliveryDate,
-      note: data.note,
-      items: data.items,
-    });
+    return api.post('/orders', data);
   },
-  delete(id: string) {
-    return api.delete(`/transactions/sales-orders/${id}`);
+  update(id: string, data: {
+    customer_id?: string; expected_delivery_date?: string; note?: string; items?: any[];
+  }) {
+    return api.put(`/orders/${id}`, data);
   },
+  delete(id: string) { return api.delete(`/orders/${id}`); },
+  returnInventory(id: string) { return api.put(`/orders/${id}/return-inventory`); },
 };
 
 export const logisticsService = {
-  getAll(params?: { page?: number; limit?: number; status?: string }) {
-    return api.get('/transactions/logistics', { params });
-  },
-  forwardToWarehouse(salesOrderId: string, note?: string) {
-    return api.post('/transactions/logistics/forward', { salesOrderId, note });
-  },
-  rejectOrder(salesOrderId: string, reason: string) {
-    return api.post('/transactions/logistics/reject', { salesOrderId, reason });
-  },
-  confirmDelivery(salesOrderId: string) {
-    return api.post('/transactions/logistics/confirm-delivery', { salesOrderId });
+  getAll() { return api.get('/logistics'); },
+  process(data: { sales_order_id: string; action: string; received_by?: string; note?: string }) {
+    return api.post('/logistics/process', data);
   },
 };
 
 export const stockOutboundService = {
-  getAll(params?: { page?: number; limit?: number; status?: string; startDate?: string; endDate?: string }) {
-    return api.get('/transactions/stock-outbound', { params });
+  getAll() { return api.get('/outbounds'); },
+  create(data: {
+    note_no: string; sales_order_id: string; warehouse_id: string;
+    export_date?: string; note?: string; items?: any[];
+  }) {
+    return api.post('/outbounds', data);
   },
-  getPendingRequests() {
-    return api.get('/transactions/stock-outbound/pending');
-  },
-  getById(id: string) {
-    return api.get(`/transactions/stock-outbound/${id}`);
-  },
-  create(data: { salesOrderId: string; warehouseId: string; exportDate?: string; note?: string }) {
-    return api.post('/transactions/stock-outbound', data);
-  },
-  respondOutbound(salesOrderId: string, action: 'reject' | 'delay', reason?: string, expectedDate?: string) {
-    return api.post(`/transactions/stock-outbound/${salesOrderId}/respond`, { action, reason, expectedDate });
-  },
-  cancel(id: string) {
-    return api.post(`/transactions/stock-outbound/${id}/cancel`);
-  },
-  delete(id: string) {
-    return api.delete(`/transactions/stock-outbound/${id}`);
+  respond(id: string, data: { action: string; warehouse_note?: string }) {
+    return api.put(`/outbounds/${id}/respond`, data);
   },
 };
 
-export const carrierService = {
-  getAll() {
-    return api.get('/transactions/carriers');
+export const productionReceiptService = {
+  getAll() { return api.get('/receipts'); },
+  create(data: {
+    receipt_no: string; warehouse_id: string; receipt_date?: string;
+    note?: string; items: any[];
+  }) {
+    return api.post('/receipts', data);
   },
-  create(data: { name: string; code: string; autoPrefix?: string }) {
-    return api.post('/transactions/carriers', data);
+  respond(id: string, data: { action: string; reason?: string; expected_delivery_date?: string }) {
+    return api.put(`/receipts/${id}/respond`, data);
   },
-  update(id: string, data: { name?: string; autoPrefix?: string }) {
-    return api.put(`/transactions/carriers/${id}`, data);
-  },
-  delete(id: string) {
-    return api.delete(`/transactions/carriers/${id}`);
-  },
-};
-
-export const notificationService = {
-  getAll(params?: { page?: number; limit?: number; type?: string; status?: string }) {
-    return api.get('/transactions/notifications', { params });
-  },
-  resolve(id: string) {
-    return api.post(`/transactions/notifications/${id}/resolve`);
-  },
-  delete(id: string) {
-    return api.delete(`/transactions/notifications/${id}`);
-  },
-};
-
-export const shipmentService = {
-  getAllTracking(params?: { page?: number; limit?: number; status?: string }) {
-    return api.get('/transactions/shipments/tracking', { params });
-  },
-  getSteps() {
-    return api.get('/transactions/shipments/steps');
-  },
-  getRejectionReasons() {
-    return api.get('/transactions/shipments/rejection-reasons');
-  },
-  getByOrderId(salesOrderId: string) {
-    return api.get(`/transactions/shipments/${salesOrderId}`);
-  },
-  create(data: { salesOrderId: string; carrierId: string; trackingNo: string; shippingFee?: number }) {
-    return api.post('/transactions/shipments', data);
-  },
-  createAndForward(data: { salesOrderId: string; carrierId: string; shippingFee?: number; note?: string }) {
-    return api.post('/transactions/shipments/create-and-forward', data);
-  },
-  advanceStep(salesOrderId: string) {
-    return api.post(`/transactions/shipments/${salesOrderId}/advance`);
-  },
-  simulateDelivery(salesOrderId: string) {
-    return api.post(`/transactions/shipments/${salesOrderId}/simulate-delivery`);
-  },
-  confirmReceived(salesOrderId: string) {
-    return api.post(`/transactions/shipments/${salesOrderId}/confirm-received`);
-  },
-  customerReject(salesOrderId: string, reason: string) {
-    return api.post(`/transactions/shipments/${salesOrderId}/customer-reject`, { reason });
-  },
+  confirm(id: string) { return api.put(`/receipts/${id}/confirm`); },
 };
 
 export const reportService = {
-  getDashboard() {
-    return api.get('/reports/dashboard');
-  },
-  getInventory(params?: { warehouseId?: string; productId?: string }) {
-    return api.get('/reports/inventory', { params });
-  },
-  getDefectiveInventory() {
-    return api.get('/reports/inventory/defective');
-  },
-  getInbound(params?: { startDate?: string; endDate?: string; warehouseId?: string; productId?: string }) {
-    return api.get('/reports/inbound', { params });
-  },
-  getOutbound(params?: { startDate?: string; endDate?: string; warehouseId?: string; customerId?: string }) {
-    return api.get('/reports/outbound', { params });
-  },
-  getTransactions(params?: { page?: number; limit?: number; warehouseId?: string; productId?: string; transactionType?: string; startDate?: string; endDate?: string }) {
-    return api.get('/reports/transactions', { params });
-  },
+  getDashboard() { return api.get('/reports/dashboard'); },
+  getInventory(params?: { warehouse_id?: string }) { return api.get('/reports/inventory', { params }); },
+  getInbound() { return api.get('/reports/inbound'); },
+  getOutbound() { return api.get('/reports/outbound'); },
 };

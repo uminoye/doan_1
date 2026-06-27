@@ -1,691 +1,243 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Modal, Spinner } from '@/components/ui/Misc';
-import Button from '@/components/ui/Button';
-import { salesOrderService, customerService, productService } from '@/services';
-import { SalesOrder, Customer, Product, PaginatedResponse, ORDER_STATUS_LABELS } from '@/types';
-import dayjs from 'dayjs';
+import { customerService, productService, salesOrderService } from '@/services';
 
-interface OrderItem { productId: string; quantity: number; unitPrice: number; product?: Product; }
-interface FormItem { id?: string; product_id: string; quantity: number; unit_price: number; product?: Product; }
-
-const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
-  draft:             { label: 'Nháp',       tone: 'gray' },
-  pending:           { label: 'Chờ duyệt',  tone: 'warning' },
-  logistics_rejected: { label: 'Bị từ chối', tone: 'danger' },
-  logistics_review:   { label: 'LXxem xét',  tone: 'orange' },
+const fmt = new Intl.NumberFormat('vi-VN');
+const statusConfig: Record<string, { label: string; tone: string }> = {
+  pending: { label: 'Đang chờ duyệt', tone: 'warning' },
+  returned: { label: 'Bị từ chối', tone: 'danger' },
   warehouse_processing: { label: 'Kho đang xuất', tone: 'info' },
-  warehouse_rejected: { label: 'Kho từ chối', tone: 'danger' },
-  warehouse_delayed:  { label: 'Dời ngày',   tone: 'amber' },
-  shipping:          { label: 'Đang giao',  tone: 'purple' },
-  completed:         { label: 'Hoàn thành', tone: 'success' },
-  returned:          { label: 'Hoàn trả',   tone: 'danger' },
-  canceled:          { label: 'Hủy đơn',    tone: 'gray' },
+  shipping: { label: 'Đang giao', tone: 'purple' },
+  completed: { label: 'Đã hoàn tất', tone: 'success' },
+  canceled: { label: 'Hủy đơn', tone: 'danger' },
 };
-
-const TONE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
-  gray:    { bg: 'bg-gray-100',    text: 'text-gray-700',    border: 'border-gray-200' },
-  warning: { bg: 'bg-amber-50',   text: 'text-amber-800',  border: 'border-amber-200' },
-  danger:  { bg: 'bg-red-50',     text: 'text-red-800',    border: 'border-red-200' },
-  info:    { bg: 'bg-blue-50',    text: 'text-blue-800',   border: 'border-blue-200' },
-  success: { bg: 'bg-green-50',   text: 'text-green-800',  border: 'border-green-200' },
-  purple:  { bg: 'bg-purple-50',  text: 'text-purple-800', border: 'border-purple-200' },
-  orange:  { bg: 'bg-orange-50',  text: 'text-orange-800', border: 'border-orange-200' },
-  amber:   { bg: 'bg-amber-50',   text: 'text-amber-800',  border: 'border-amber-200' },
+const toneStyle: Record<string, React.CSSProperties> = {
+  warning: { background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' },
+  danger: { background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' },
+  info: { background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' },
+  success: { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' },
+  purple: { background: '#ede9fe', color: '#6b21a8', border: '1px solid #c4b5fd' },
 };
-
-const VND = new Intl.NumberFormat('vi-VN').format;
-
-function Badge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] || { label: status, tone: 'warning' };
-  const tone = TONE_STYLES[cfg.tone] || TONE_STYLES.warning;
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-extrabold border ${tone.bg} ${tone.text} ${tone.border}`}>
-      {cfg.label}
-    </span>
-  );
-}
-
-function StatCard({ label, value, color, children }: { label: string; value: number; color: string; children: React.ReactNode }) {
-  return (
-    <div className={`relative bg-gradient-to-b from-white to-slate-50 rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${color}`}
-      style={{ minHeight: 104, borderTop: `4px solid var(--accent, #6366f1)` }}>
-      <div className="flex items-center justify-center w-10 h-10 rounded-2xl mb-3 shadow-sm">{children}</div>
-      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="text-3xl font-black text-slate-900 mt-2 tracking-tight">{value}</p>
-    </div>
-  );
-}
 
 export default function SalesOrdersPage() {
-  const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [recreateMode, setRecreateMode] = useState(false);
-  const [orderNo, setOrderNo] = useState('');
-  const [customerId, setCustomerId] = useState('');
-  const [expectedDate, setExpectedDate] = useState('');
-  const [note, setNote] = useState('');
-  const [formItems, setFormItems] = useState<FormItem[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
-
-  const [viewOrder, setViewOrder] = useState<SalesOrder | null>(null);
-  const [errorOrder, setErrorOrder] = useState<SalesOrder | null>(null);
-  const [warehouseRejectedOrder, setWarehouseRejectedOrder] = useState<SalesOrder | null>(null);
-  const [cancelOrder, setCancelOrder] = useState<SalesOrder | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-
+  const [form, setForm] = useState({ order_no: '', customer_id: '', expected_delivery_date: '', note: '' });
+  const [items, setItems] = useState<any[]>([]);
+  const [viewOrder, setViewOrder] = useState<any>(null);
   const orderNoRef = useRef<HTMLInputElement>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = async () => {
     try {
-      const [oRes, cRes, pRes] = await Promise.all([
-        salesOrderService.getAll({ limit: 200 }),
-        customerService.getAll({ limit: 200 }),
-        productService.getAll({ limit: 200 }),
-      ]);
-      setOrders(oRes.data.data || []);
-      setCustomers(cRes.data.data || []);
-      setProducts(pRes.data.data || []);
-    } catch (e) { console.error(e); }
+      const [o, c, p] = await Promise.all([salesOrderService.getAll(), customerService.getAll(), productService.getAll()]);
+      setOrders(o.data); setCustomers(c.data); setProducts(p.data);
+    } catch { alert('Lỗi tải dữ liệu'); }
     finally { setLoading(false); }
-  }, []);
+  };
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
-    if (isCreateOpen) {
+    if (isOpen) {
       const t = setTimeout(() => orderNoRef.current?.focus(), 80);
       return () => clearTimeout(t);
     }
-  }, [isCreateOpen, editingId]);
+  }, [isOpen, editingId]);
 
   const filtered = orders.filter(o => {
-    const keyword = search.trim().toLowerCase();
-    const text = [
-      o.orderNo, o.customer?.name, o.expectedDeliveryDate, o.note,
-      ...(o.items || []).flatMap(i => [i.product?.name, i.product?.sku]),
-    ].filter(Boolean).join(' ').toLowerCase();
-    const matchSearch = !keyword || text.includes(keyword);
-    const matchStatus = statusFilter === 'all' || o.status === statusFilter;
-    return matchSearch && matchStatus;
+    const s = statusConfig[o.status] ? o.status : 'pending';
+    const kw = search.trim().toLowerCase();
+    const match = !kw || [o.order_no, o.customer_name, o.note].some(v => String(v || '').toLowerCase().includes(kw));
+    return match && (statusFilter === 'all' || s === statusFilter);
   });
 
   const stats = {
     total: orders.length,
-    pending: orders.filter(o => o.status === 'pending').length,
-    logisticsRejected: orders.filter(o => o.status === 'logistics_rejected').length,
+    pending: orders.filter(o => (statusConfig[o.status] ? o.status : 'pending') === 'pending').length,
     completed: orders.filter(o => o.status === 'completed').length,
-    issues: orders.filter(o => ['logistics_review', 'returned', 'canceled'].includes(o.status)).length,
+    issues: orders.filter(o => ['returned', 'canceled'].includes(o.status)).length,
   };
 
-  const openCreate = (recreateOrderNo?: string) => {
-    setEditingId(null);
-    setRecreateMode(false);
-    setOrderNo(recreateOrderNo || '');
-    setCustomerId(customers[0]?.id || '');
-    setExpectedDate('');
-    setNote('');
-    setFormItems([{ product_id: '', quantity: 1, unit_price: 0 }]);
-    setFormError('');
-    setIsCreateOpen(true);
-  };
-
-  const openEdit = async (o: SalesOrder) => {
-    if (!['pending', 'logistics_rejected'].includes(o.status)) {
-      alert('Chỉ có thể chỉnh sửa đơn đang chờ duyệt hoặc bị từ chối.'); return;
-    }
-    setEditingId(o.id);
-    setOrderNo(o.orderNo);
-    setCustomerId(o.customerId);
-    setExpectedDate(o.expectedDeliveryDate ? dayjs(o.expectedDeliveryDate).format('YYYY-MM-DD') : '');
-    setNote(o.note || '');
-    setFormItems(o.items.map(i => ({
-      id: i.id,
-      product_id: i.productId,
-      quantity: i.quantity,
-      unit_price: Number(i.unitPrice),
-      product: i.product,
-    })));
-    setFormError('');
-    setIsCreateOpen(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const closeCreate = () => { setIsCreateOpen(false); setEditingId(null); setRecreateMode(false); };
-
-  const addItem = () => setFormItems([...formItems, { product_id: '', quantity: 1, unit_price: 0 }]);
-
-  const updateItem = (idx: number, field: string, value: string | number) => {
-    const next = [...formItems];
+  const addItem = () => setItems([...items, { product_id: '', quantity: 1, unit_price: 0 }]);
+  const updateItem = (i: number, field: string, value: any) => {
+    const next = [...items];
     if (field === 'product_id') {
-      next[idx].product_id = value as string;
-      const p = products.find(p => p.id === value);
-      if (p) next[idx].unit_price = Number(p.salePrice);
-    } else if (field === 'quantity') {
-      next[idx].quantity = Math.max(1, Number(value) || 1);
+      const prod = products.find(p => p.id === value);
+      next[i] = { ...next[i], product_id: value, unit_price: prod ? Number(prod.sale_price) : 0 };
+    } else {
+      next[i] = { ...next[i], [field]: field === 'quantity' ? Math.max(1, Number(value)) : value };
     }
-    setFormItems(next);
+    setItems(next);
+  };
+  const removeItem = (i: number) => setItems(items.filter((_, idx) => idx !== i));
+
+  const openCreate = () => {
+    setEditingId(null); setForm({ order_no: '', customer_id: '', expected_delivery_date: '', note: '' });
+    setItems([{ product_id: '', quantity: 1, unit_price: 0 }]); setIsOpen(true);
   };
 
-  const removeItem = (idx: number) => setFormItems(formItems.filter((_, i) => i !== idx));
-
-  const handleSave = async () => {
-    if (recreateMode && editingId) {
-      await handleRecreateSubmit();
-      return;
-    }
-    const validItems = formItems.filter(i => i.product_id && i.quantity > 0);
-    if (!customerId) { setFormError('Vui lòng chọn khách hàng'); return; }
-    if (!validItems.length) { setFormError('Phải có ít nhất 1 sản phẩm'); return; }
-    setSaving(true); setFormError('');
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!items.length || !items[0].product_id) return alert('Chọn ít nhất 1 sản phẩm');
     try {
       if (editingId) {
-        await salesOrderService.update(editingId, {
-          customerId,
-          expectedDeliveryDate: expectedDate || undefined,
-          note: note || undefined,
-          items: validItems.map(i => ({ productId: i.product_id, quantity: i.quantity, unitPrice: i.unit_price })),
-        });
-        alert('Đã sửa đơn & tự động gửi lại cho Logistics!');
+        await salesOrderService.update(editingId, { customer_id: form.customer_id, expected_delivery_date: form.expected_delivery_date, note: form.note, items });
+        alert('Cập nhật thành công!');
       } else {
-        await salesOrderService.create({
-          customerId,
-          expectedDeliveryDate: expectedDate || undefined,
-          note: note || undefined,
-          items: validItems.map(i => ({ productId: i.product_id, quantity: i.quantity, unitPrice: i.unit_price })),
-        });
-        alert('Tạo đơn hàng thành công! Đơn đã được gửi cho Logistics.');
+        await salesOrderService.create({ order_no: form.order_no, customer_id: form.customer_id, expected_delivery_date: form.expected_delivery_date, note: form.note, items });
+        alert('Tạo đơn hàng thành công!');
       }
-      closeCreate();
-      fetchData();
-    } catch (e: any) {
-      setFormError(e.response?.data?.error || e.response?.data?.message || 'Lỗi lưu dữ liệu');
-    } finally { setSaving(false); }
+      setIsOpen(false); fetchData();
+    } catch (err: any) { alert(err.response?.data?.message || 'Lỗi'); }
   };
 
-  const handleDelete = async (o: SalesOrder) => {
-    if (['warehouse_processing', 'shipping', 'completed', 'canceled', 'returned'].includes(o.status)) {
-      alert('Đơn đang trong trạng thái này nên không thể xóa.'); return;
-    }
-    if (!confirm(`Xác nhận xóa vĩnh viễn đơn hàng ${o.orderNo}? Hành động này không thể hoàn tác.`)) return;
-    setActionLoading(o.id);
-    try {
-      await salesOrderService.delete(o.id);
-      fetchData();
-    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi xóa đơn'); }
-    finally { setActionLoading(null); }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Xóa vĩnh viễn đơn này?')) return;
+    try { await salesOrderService.delete(id); fetchData(); } catch (err: any) { alert(err.response?.data?.message || 'Lỗi'); }
   };
 
-  const handleCancelOrder = async (o: SalesOrder) => {
-    if (!confirm('Xác nhận hủy đơn hàng này?')) return;
-    setActionLoading(o.id);
-    try {
-      await salesOrderService.returnInventory(o.id);
-      alert('Đã hủy đơn thành công!');
-      setErrorOrder(null);
-      fetchData();
-    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi hủy đơn'); }
-    finally { setActionLoading(null); }
+  const handleCancel = async (id: string) => {
+    if (!confirm('Hủy đơn hàng này?')) return;
+    try { await salesOrderService.returnInventory(id); alert('Đã hủy!'); fetchData(); } catch (err: any) { alert(err.response?.data?.message || 'Lỗi'); }
   };
 
-  const [wrAction, setWrAction] = useState<'confirm_delay' | 'recreate'>('confirm_delay');
-  const [wrExpectedDate, setWrExpectedDate] = useState('');
-  const [wrNote, setWrNote] = useState('');
-
-  const handleWarehouseRejectConfirm = async () => {
-    if (!warehouseRejectedOrder) return;
-    if (wrAction === 'confirm_delay') {
-      if (!wrExpectedDate) { alert('Vui lòng chọn ngày giao mới'); return; }
-      try {
-        await salesOrderService.update(warehouseRejectedOrder.id, {
-          customerId: warehouseRejectedOrder.customerId,
-          expectedDeliveryDate: wrExpectedDate,
-          note: warehouseRejectedOrder.note || undefined,
-          items: warehouseRejectedOrder.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: Number(i.unitPrice) })),
-        });
-        await salesOrderService.confirmDelay(warehouseRejectedOrder.id);
-        alert('Đã xác nhận dời ngày! Đơn quay về chờ duyệt.');
-        setWarehouseRejectedOrder(null);
-        fetchData();
-      } catch (e: any) { alert(e.response?.data?.error || 'Lỗi xác nhận dời ngày'); }
-    } else {
-      // Recreate — mở form để Sale sửa thông tin rồi gửi lại
-      openCreate();
-      setEditingId(warehouseRejectedOrder.id);
-      setRecreateMode(true);
-      setOrderNo(warehouseRejectedOrder.orderNo);
-      setCustomerId(warehouseRejectedOrder.customerId);
-      setExpectedDate(dayjs().add(1, 'day').format('YYYY-MM-DD'));
-      setNote('');
-      setFormItems(warehouseRejectedOrder.items.map(i => ({
-        id: i.id,
-        product_id: i.productId,
-        quantity: i.quantity,
-        unit_price: Number(i.unitPrice),
-        product: i.product,
-      })));
-      setWarehouseRejectedOrder(null);
-    }
-  };
-
-  const handleRecreateSubmit = async () => {
-    if (!editingId) return;
-    const validItems = formItems.filter(i => i.product_id && i.quantity > 0);
-    if (!customerId) { setFormError('Vui lòng chọn khách hàng'); return; }
-    if (!validItems.length) { setFormError('Phải có ít nhất 1 sản phẩm'); return; }
-    setSaving(true); setFormError('');
-    try {
-      await salesOrderService.recreate({
-        warehouseRejectedOrderId: editingId,
-        customerId,
-        expectedDeliveryDate: expectedDate || undefined,
-        note: note || undefined,
-        items: validItems.map(i => ({ productId: i.product_id, quantity: i.quantity, unitPrice: i.unit_price })),
-      });
-      alert(`Đã tạo lại đơn!`);
-      closeCreate();
-      fetchData();
-    } catch (e: any) {
-      setFormError(e.response?.data?.error || 'Lỗi tạo lại đơn');
-    } finally { setSaving(false); }
-  };
-
-  const totalAmount = formItems.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
+  const totalLine = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.unit_price) * (i.quantity || 0)), 0);
 
   return (
     <AppLayout>
-      <div className="min-h-screen p-8 bg-gradient-to-br from-blue-50 via-slate-50 to-slate-100">
-        <div className="max-w-7xl mx-auto">
-
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
-            <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight" style={{ letterSpacing: '-0.03em' }}>Quản lý đơn hàng</h1>
-              <p className="text-slate-500 mt-1">Theo dõi, chỉnh sửa và xử lý đơn hàng trong một giao diện gọn gàng.</p>
-            </div>
-            <button
-              onClick={() => openCreate()}
-              className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-400 text-white font-extrabold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
-              style={{ boxShadow: '0 14px 28px rgba(37,99,235,0.22)' }}
-            >
-              + Tạo đơn hàng
-            </button>
+      <div style={{ padding: '28px', background: '#f7fafc', minHeight: '100vh' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 28, color: '#0f172a', letterSpacing: '-0.03em' }}>Quản lý đơn hàng</h2>
+            <p style={{ margin: '6px 0 0', color: '#64748b' }}>Theo dõi và xử lý đơn hàng</p>
           </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-            <div
-              style={{ '--accent': '#2563eb' } as React.CSSProperties}
-              className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3 shadow-sm">
-                <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M4 7.5C4 6.12 5.12 5 6.5 5h11C18.88 5 20 6.12 20 7.5v9c0 1.38-1.12 2.5-2.5 2.5h-11C5.12 19 4 17.88 4 16.5v-9Z" stroke="currentColor" strokeWidth="1.8"/><path d="M8 9h8M8 12h8M8 15h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-              </div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Tổng đơn</p>
-              <p className="text-3xl font-black text-slate-900 mt-2 tracking-tight">{stats.total}</p>
-            </div>
-            <div
-              style={{ '--accent': '#f59e0b' } as React.CSSProperties}
-              className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3 shadow-sm">
-                <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8"/></svg>
-              </div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Chờ duyệt</p>
-              <p className="text-3xl font-black text-slate-900 mt-2 tracking-tight">{stats.pending}</p>
-            </div>
-            <div
-              style={{ '--accent': '#16a34a' } as React.CSSProperties}
-              className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center mb-3 shadow-sm">
-                <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M20 7 10 17l-5-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-              </div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Đã hoàn tất</p>
-              <p className="text-3xl font-black text-slate-900 mt-2 tracking-tight">{stats.completed}</p>
-            </div>
-            <div
-              style={{ '--accent': '#dc2626' } as React.CSSProperties}
-              className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-3 shadow-sm">
-                <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><path d="m10.29 4.86-7.43 12.8A2 2 0 0 0 4.58 21h14.84a2 2 0 0 0 1.72-3.34l-7.43-12.8a2 2 0 0 0-3.44 0Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
-              </div>
-              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Đơn lỗi</p>
-              <p className="text-3xl font-black text-slate-900 mt-2 tracking-tight">{stats.issues}</p>
-            </div>
-          </div>
-
-          {/* Filter bar */}
-          <div className="bg-white/90 backdrop-blur rounded-3xl shadow-lg border border-slate-200 overflow-hidden mb-6">
-            <div className="p-6">
-              <div className="flex flex-wrap gap-3 mb-4">
-                <div className="relative flex-1 min-w-64">
-                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-                  <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Tìm mã đơn, khách hàng, sản phẩm..."
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all"
-                  />
-                </div>
-                <select
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  className="px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
-                >
-                  <option value="all">Tất cả trạng thái</option>
-                  <option value="pending">Chờ duyệt</option>
-                  <option value="logistics_rejected">Bị từ chối</option>
-                  <option value="warehouse_processing">Kho đang xử lý</option>
-                  <option value="warehouse_rejected">Kho từ chối</option>
-                  <option value="warehouse_delayed">Dời ngày</option>
-                  <option value="shipping">Đang giao</option>
-                  <option value="completed">Hoàn thành</option>
-                  <option value="logistics_review">Logistics xem xét lại</option>
-                  <option value="returned">Hoàn trả / Bom hàng</option>
-                </select>
-                <div className="flex items-center px-4 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-600">
-                  {filtered.length} / {orders.length} đơn
-                </div>
-                <button
-                  onClick={() => { setSearch(''); setStatusFilter('all'); }}
-                  className="px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
-                >
-                  Xóa lọc
-                </button>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 border-y border-slate-100">
-                    <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Mã đơn</th>
-                    <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Khách hàng</th>
-                    <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell">Ngày giao dự kiến</th>
-                    <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Trạng thái</th>
-                    <th className="text-center px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={5} className="text-center py-16"><Spinner /></td></tr>
-                  ) : filtered.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-16 text-slate-400">Chưa có đơn hàng nào</td></tr>
-                  ) : filtered.map(o => {
-                    const isEditable = ['pending', 'logistics_rejected'].includes(o.status);
-                    return (
-                      <tr
-                        key={o.id}
-                        className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors duration-150"
-                      >
-                        <td className="px-5 py-4 font-mono font-black text-blue-600 text-sm">{o.orderNo}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-2 text-slate-700 font-medium text-sm">
-                            <span className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">
-                              {o.customer?.name?.[0] || '?'}
-                            </span>
-                            {o.customer?.name || '-'}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-slate-600 text-sm hidden md:table-cell">
-                          {o.expectedDeliveryDate ? dayjs(o.expectedDeliveryDate).format('DD/MM/YYYY') : '-'}
-                        </td>
-                        <td className="px-5 py-4"><Badge status={o.status} /></td>
-                        <td className="px-5 py-4">
-                          {o.status === 'completed' ? (
-                            <button onClick={() => setViewOrder(o)} className="w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-all shadow-sm">
-                              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8"/></svg>
-                            </button>
-                          ) : o.status === 'canceled' ? (
-                            <button onClick={() => setCancelOrder(o)} className="w-9 h-9 rounded-xl border border-red-200 bg-gradient-to-br from-pink-50 to-red-50 flex items-center justify-center text-red-600 shadow-sm">
-                              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8"/></svg>
-                            </button>
-                          ) : o.status === 'logistics_rejected' ? (
-                            <button
-                              onClick={() => { setErrorOrder(o); }}
-                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-red-500 text-white text-xs font-extrabold shadow-md hover:shadow-lg transition-all"
-                            >
-                              Sửa lỗi &amp; xử lý
-                            </button>
-                          ) : o.status === 'warehouse_rejected' || o.status === 'warehouse_delayed' ? (
-                            <button
-                              onClick={() => { setWarehouseRejectedOrder(o); setWrAction('confirm_delay'); setWrExpectedDate(o.expectedDeliveryDate ? dayjs(o.expectedDeliveryDate).format('YYYY-MM-DD') : ''); setWrNote(''); }}
-                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 text-white text-xs font-extrabold shadow-md hover:shadow-lg transition-all"
-                            >
-                              {o.status === 'warehouse_rejected' ? 'Xem &amp; xử lý' : 'Xác nhận dời ngày'}
-                            </button>
-                          ) : isEditable ? (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => openEdit(o)}
-                                className="w-9 h-9 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-700 flex items-center justify-center shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M4 20h4l10.5-10.5a1.8 1.8 0 0 0 0-2.55l-1.45-1.45a1.8 1.8 0 0 0-2.55 0L4 16v4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M13.5 6.5 17.5 10.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-                              </button>
-                              <button
-                                onClick={() => handleDelete(o)}
-                                className="w-9 h-9 rounded-xl border border-red-200 bg-gradient-to-br from-pink-50 to-red-50 text-red-600 flex items-center justify-center shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M5 7h14M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7M8 7l.7 12.2A1.8 1.8 0 0 0 10.5 21h3a1.8 1.8 0 0 0 1.8-1.8L16 7" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
-                              </button>
-                            </div>
-                          ) : (
-                            <button onClick={() => setViewOrder(o)} className="w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:bg-slate-50 transition-all shadow-sm">
-                              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8"/></svg>
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <button onClick={openCreate} style={{ padding: '12px 18px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #2563eb, #60a5fa)', color: 'white', fontWeight: 800, cursor: 'pointer', boxShadow: '0 14px 28px rgba(37,99,235,0.22)', fontSize: 14 }}>
+            + Tạo đơn hàng
+          </button>
         </div>
 
-        {/* ===== CREATE / EDIT MODAL ===== */}
-        {isCreateOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            style={{ animation: 'fadeIn 180ms ease-out' }}>
-            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-2xl"
-              style={{ animation: 'scaleIn 220ms ease-out' }}>
-              {/* Modal Header */}
-              <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
-                <div>
-                  <p className="text-xs font-extrabold text-blue-600 uppercase tracking-widest">Quản lý đơn hàng</p>
-                  <h3 className="text-xl font-black text-slate-900 mt-1 tracking-tight">
-                    {recreateMode ? `Tạo lại đơn ${orderNo}` : (editingId ? `Chỉnh sửa đơn ${orderNo}` : 'Tạo đơn hàng mới')}
-                  </h3>
-                </div>
-                <button onClick={closeCreate} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-700 font-black text-xl hover:bg-slate-50 transition-all cursor-pointer">
-                  ×
-                </button>
+        {/* Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14, marginBottom: 40 }}>
+          {[
+            { label: 'Tổng đơn', value: stats.total, bg: '#eff6ff', color: '#2563eb' },
+            { label: 'Chờ duyệt', value: stats.pending, bg: '#fffbeb', color: '#d97706' },
+            { label: 'Đã hoàn tất', value: stats.completed, bg: '#ecfdf5', color: '#16a34a' },
+            { label: 'Lỗi / Hủy', value: stats.issues, bg: '#fef2f2', color: '#dc2626' },
+          ].map(s => (
+            <div key={s.label} style={{ background: '#fff', borderRadius: 22, padding: '18px 18px 16px', boxShadow: '0 12px 24px rgba(15,23,42,0.08)', borderTop: `4px solid ${s.color}`, position: 'relative', overflow: 'hidden' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 14, background: s.bg, display: 'grid', placeItems: 'center', color: s.color, marginBottom: 12, fontSize: 20 }}>
+                <i className="ri-shopping-cart-2-line" />
               </div>
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>{s.label}</p>
+              <p style={{ margin: '10px 0 0', fontSize: 30, fontWeight: 900, color: '#0f172a' }}>{loading ? '...' : s.value}</p>
+            </div>
+          ))}
+        </div>
 
-              <div className="p-7">
-                {formError && (
-                  <div className="mb-5 px-4 py-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold">
-                    {formError}
-                  </div>
-                )}
-                <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
-                  {/* Form fields */}
-                  <div className="grid grid-cols-3 gap-4 mb-5">
+        {/* Create/Edit Modal */}
+        {isOpen && (
+          <div className="modal-animate" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.62)', backdropFilter: 'blur(8px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 20 }}>
+            <div className="modal-panel-animate" style={{ background: '#fff', width: 'min(1100px, 100%)', maxHeight: '92vh', overflowY: 'auto', borderRadius: 24, border: '1px solid #e5eef8', boxShadow: '0 30px 80px rgba(15,23,42,0.22)' }}>
+              <div style={{ padding: '22px 24px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{editingId ? 'Sửa' : 'Tạo'} đơn hàng</div>
+                  <h3 style={{ margin: '6px 0 0', fontSize: 22, color: '#0f172a' }}>{editingId ? `Đơn ${form.order_no}` : 'Đơn hàng mới'}</h3>
+                </div>
+                <button onClick={() => setIsOpen(false)} style={{ width: 40, height: 40, borderRadius: 12, border: '1px solid #dbe3ee', background: '#fff', cursor: 'pointer', fontSize: 18 }}>×</button>
+              </div>
+              <div style={{ padding: 24 }}>
+                <form onSubmit={handleSubmit}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
                     <div>
-                      <label className="block text-xs font-extrabold text-slate-700 mb-2">Mã đơn hàng</label>
-                      <input
-                        ref={orderNoRef}
-                        value={orderNo}
-                        onChange={e => setOrderNo(e.target.value)}
-                        disabled={!!editingId}
-                        placeholder="VD: SO-2026-001"
-                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all disabled:bg-slate-50 disabled:text-slate-400"
-                      />
+                      <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: '#334155' }}>Mã đơn hàng</label>
+                      <input ref={orderNoRef} required placeholder="SO-2026-001" value={form.order_no} onChange={e => setForm({ ...form, order_no: e.target.value })} disabled={!!editingId} style={{ width: '100%', padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', boxSizing: 'border-box', fontSize: 14 }} />
                     </div>
                     <div>
-                      <label className="block text-xs font-extrabold text-slate-700 mb-2">Khách hàng</label>
-                      <select
-                        required
-                        value={customerId}
-                        onChange={e => setCustomerId(e.target.value)}
-                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all cursor-pointer"
-                      >
+                      <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: '#334155' }}>Khách hàng</label>
+                      <select required value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })} style={{ width: '100%', padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', boxSizing: 'border-box', fontSize: 14 }}>
                         <option value="">-- Chọn khách hàng --</option>
-                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.company_name || c.name}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-extrabold text-slate-700 mb-2">Ngày giao dự kiến</label>
-                      <input
-                        type="date"
-                        value={expectedDate}
-                        onChange={e => setExpectedDate(e.target.value)}
-                        className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all"
-                      />
+                      <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: '#334155' }}>Ngày giao dự kiến</label>
+                      <input type="date" required value={form.expected_delivery_date} onChange={e => setForm({ ...form, expected_delivery_date: e.target.value })} style={{ width: '100%', padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', boxSizing: 'border-box', fontSize: 14 }} />
                     </div>
                   </div>
-
-                  <div className="mb-5">
-                    <label className="block text-xs font-extrabold text-slate-700 mb-2">Ghi chú / Địa chỉ giao hàng</label>
-                    <textarea
-                      value={note}
-                      onChange={e => setNote(e.target.value)}
-                      rows={2}
-                      placeholder="Địa chỉ giao hàng, thông tin bổ sung..."
-                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all resize-none"
-                    />
+                  <div style={{ marginTop: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: '#334155' }}>Ghi chú</label>
+                    <textarea placeholder="Địa chỉ giao hàng..." value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} style={{ width: '100%', padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', boxSizing: 'border-box', fontSize: 14, minHeight: 90, resize: 'vertical', fontFamily: 'inherit' }} />
                   </div>
 
-                  {/* Products table */}
-                  <div className="rounded-2xl border border-slate-200 overflow-hidden mb-6">
-                    <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-b from-slate-50 to-white border-b border-slate-200">
+                  {/* Items */}
+                  <div style={{ marginTop: 22, borderRadius: 18, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', background: 'linear-gradient(180deg, #f8fafc 0%, #fff 100%)', borderBottom: '1px solid #e2e8f0' }}>
                       <div>
-                        <p className="font-extrabold text-slate-900">Danh sách sản phẩm</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Chọn sản phẩm, số lượng và xem thành tiền ngay bên dưới.</p>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>Danh sách sản phẩm</div>
+                        <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Chọn sản phẩm, số lượng và xem thành tiền.</div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={addItem}
-                        className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-teal-600 to-blue-600 text-white text-sm font-extrabold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer"
-                        style={{ boxShadow: '0 14px 30px rgba(37,99,235,0.22)' }}
-                      >
+                      <button type="button" onClick={addItem} style={{ padding: '11px 16px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #0f766e, #2563eb)', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
                         + Thêm sản phẩm
                       </button>
                     </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="bg-white border-b border-slate-100">
-                            <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase">Sản phẩm</th>
-                            <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase w-36">Số lượng</th>
-                            <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase w-44">Đơn giá</th>
-                            <th className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase w-44">Thành tiền</th>
-                            <th className="w-20"></th>
-                          </tr>
-                        </thead>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                        <thead><tr style={{ background: '#fff' }}>
+                          <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Sản phẩm</th>
+                          <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13, width: 140 }}>Số lượng</th>
+                          <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13, width: 170 }}>Đơn giá</th>
+                          <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13, width: 170 }}>Thành tiền</th>
+                          <th style={{ width: 90 }}></th>
+                        </tr></thead>
                         <tbody>
-                          {formItems.length === 0 ? (
-                            <tr><td colSpan={5} className="text-center py-10 text-slate-400 text-sm">Chưa có sản phẩm nào. Hãy thêm sản phẩm để bắt đầu.</td></tr>
-                          ) : formItems.map((item, idx) => {
-                            const lineTotal = (item.quantity || 0) * (item.unit_price || 0);
-                            return (
-                              <tr key={idx} className="border-t border-slate-100">
-                                <td className="px-5 py-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-50 flex items-center justify-center text-blue-600 flex-shrink-0 shadow-sm">
-                                      <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M4 7.5 12 4l8 3.5-8 3.5-8-3.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 7.5V16.5L12 20l8-3.5V7.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
-                                    </div>
-                                    <select
-                                      value={item.product_id}
-                                      onChange={e => updateItem(idx, 'product_id', e.target.value)}
-                                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
-                                    >
-                                      <option value="">-- Chọn sản phẩm --</option>
-                                      {products.map(p => <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ''}</option>)}
-                                    </select>
-                                  </div>
-                                </td>
-                                <td className="px-5 py-4">
-                                  <div className="relative">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      value={item.quantity}
-                                      onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                                      className="w-full px-3 py-2 pr-8 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-900 text-right outline-none focus:ring-2 focus:ring-blue-200 transition-all"
-                                    />
-                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">SL</span>
-                                  </div>
-                                </td>
-                                <td className="px-5 py-4 font-bold text-slate-900">{VND(item.unit_price)} đ</td>
-                                <td className="px-5 py-4">
-                                  <span className="inline-flex items-center px-3 py-1.5 rounded-xl bg-green-50 text-green-800 font-extrabold text-sm border border-green-200">
-                                    {VND(lineTotal)} đ
-                                  </span>
-                                </td>
-                                <td className="px-5 py-4 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => removeItem(idx)}
-                                    className="w-9 h-9 rounded-xl border border-red-200 bg-pink-50 text-red-500 font-black text-base hover:bg-red-100 transition-all"
-                                  >
-                                    ×
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                        {formItems.length > 0 && (
-                          <tfoot className="bg-slate-50 border-t border-slate-200">
-                            <tr>
-                              <td colSpan={3} className="px-5 py-3 text-right font-extrabold text-slate-700 text-sm">Tổng cộng:</td>
-                              <td className="px-5 py-3">
-                                <span className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-green-100 to-emerald-50 text-green-800 font-black text-base border border-green-300">
-                                  {VND(totalAmount)} đ
+                          {items.map((item, i) => (
+                            <tr key={i} style={{ borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '16px 18px' }}>
+                                <select required value={item.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)} style={{ width: '100%', padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', fontSize: 14 }}>
+                                  <option value="">-- Chọn sản phẩm --</option>
+                                  {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                                </select>
+                              </td>
+                              <td style={{ padding: '16px 18px' }}>
+                                <input type="number" min="1" value={item.quantity} onChange={e => updateItem(i, 'quantity', e.target.value)} style={{ width: '100%', padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', fontSize: 14, fontWeight: 700, boxSizing: 'border-box' }} />
+                              </td>
+                              <td style={{ padding: '16px 18px', fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
+                                {fmt.format(item.unit_price || 0)} đ
+                              </td>
+                              <td style={{ padding: '16px 18px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '10px 14px', borderRadius: 14, background: '#ecfdf5', color: '#166534', fontWeight: 800, fontSize: 14 }}>
+                                  {fmt.format((item.unit_price || 0) * (item.quantity || 0))} đ
                                 </span>
                               </td>
-                              <td></td>
+                              <td style={{ padding: '16px 18px', textAlign: 'center' }}>
+                                <button type="button" onClick={() => removeItem(i)} style={{ width: 40, height: 40, borderRadius: 12, border: '1px solid #fecaca', background: '#fff1f2', color: '#e11d48', cursor: 'pointer', fontWeight: 800 }}>×</button>
+                              </td>
                             </tr>
-                          </tfoot>
-                        )}
+                          ))}
+                          {items.length === 0 && (
+                            <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>Chưa có sản phẩm nào.</td></tr>
+                          )}
+                        </tbody>
                       </table>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-3 flex-wrap">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className={`px-5 py-3 rounded-2xl font-extrabold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center gap-2 cursor-pointer ${
-                        editingId
-                          ? 'bg-gradient-to-r from-orange-600 to-orange-400'
-                          : 'bg-gradient-to-r from-teal-600 to-emerald-500'
-                      }`}
-                      style={{ boxShadow: editingId ? '0 14px 30px rgba(234,88,12,0.18)' : '0 14px 30px rgba(15,118,110,0.18)' }}
-                    >
-                      {saving && <Spinner size="sm" />}
-                      {recreateMode ? 'Tạo lại đơn (mã cũ)' : (editingId ? 'Lưu & Gửi lại' : 'Gửi đơn cho Logistics')}
+                  <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+                    <button type="submit" style={{ padding: '13px 20px', borderRadius: 14, border: 'none', background: editingId ? 'linear-gradient(135deg, #ea580c, #f97316)' : 'linear-gradient(135deg, #0f766e, #22c55e)', color: 'white', fontWeight: 800, cursor: 'pointer', boxShadow: '0 14px 30px rgba(15,118,110,0.18)', fontSize: 14 }}>
+                      {editingId ? 'Lưu & Gửi lại' : 'Gửi đơn cho Logistics'}
                     </button>
                     {editingId && (
-                      <button type="button" onClick={closeCreate} className="px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 transition-all cursor-pointer">
-                        Hủy chỉnh sửa
+                      <button type="button" onClick={() => setIsOpen(false)} style={{ padding: '13px 20px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
+                        Hủy
                       </button>
                     )}
                   </div>
@@ -695,351 +247,115 @@ export default function SalesOrdersPage() {
           </div>
         )}
 
-        {/* ===== VIEW ORDER MODAL ===== */}
-        <Modal open={!!viewOrder} onClose={() => setViewOrder(null)} title={`Chi tiết đơn ${viewOrder?.orderNo}`} size="xl">
-          {viewOrder && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs font-bold text-slate-500 mb-2">Khách hàng</p>
-                  <p className="font-extrabold text-slate-900">{viewOrder.customer?.name || '-'}</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs font-bold text-slate-500 mb-2">Ngày giao dự kiến</p>
-                  <p className="font-extrabold text-slate-900">{viewOrder.expectedDeliveryDate ? dayjs(viewOrder.expectedDeliveryDate).format('DD/MM/YYYY') : '-'}</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs font-bold text-slate-500 mb-2">Trạng thái</p>
-                  <Badge status={viewOrder.status} />
-                </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs font-bold text-slate-500 mb-2">Tổng tiền</p>
-                  <p className="font-black text-xl text-blue-600">{VND(viewOrder.items.reduce((s, i) => s + i.quantity * Number(i.unitPrice), 0))} đ</p>
-                </div>
+        {/* Order list */}
+        <div style={{ background: '#fff', borderRadius: 24, boxShadow: '0 20px 50px rgba(15,23,42,0.08)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          {/* Filters */}
+          <div style={{ padding: 24, borderBottom: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) repeat(2, minmax(180px, 1fr)) auto', gap: 12 }}>
+              <div style={{ position: 'relative' }}>
+                <i className="ri-search-line" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 16 }} />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm mã đơn, khách hàng..." style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', boxSizing: 'border-box', fontSize: 14 }} />
               </div>
-              {/* Progress stepper */}
-              {(() => {
-                const steps = [
-                  { label: 'Chờ duyệt', icon: '📋' },
-                  { label: 'Kho xuất', icon: '📦' },
-                  { label: 'Đang giao', icon: '🚚' },
-                  { label: 'Hoàn thành', icon: '✅' },
-                ];
-                // Xác định step hiện tại dựa trên status
-                const statusMap: Record<string, number> = {
-                  pending: 0, logistics_rejected: 0,
-                  warehouse_processing: 1, warehouse_rejected: 1, warehouse_delayed: 1,
-                  shipping: 2, logistics_review: 2,
-                  completed: 3, returned: 3, canceled: 3,
-                };
-                const currentStep = statusMap[viewOrder.status] ?? 0;
-                const isRejectedOrDelayed = viewOrder.status === 'warehouse_rejected' || viewOrder.status === 'warehouse_delayed';
-                return (
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                    <p className="text-xs font-bold text-slate-500 mb-3">Tiến trình đơn hàng</p>
-                    <div className="flex items-center">
-                      {steps.map((step, idx) => {
-                        const done = idx < currentStep;
-                        const active = idx === currentStep;
-                        const isWarehouse = idx === 1;
-                        let bg = 'bg-slate-100'; let textColor = 'text-slate-400'; let border = 'border-slate-200';
-                        if (done) { bg = 'bg-green-500'; textColor = 'text-white'; border = 'border-green-500'; }
-                        if (active) {
-                          if (isRejectedOrDelayed) { bg = 'bg-red-500'; textColor = 'text-white'; border = 'border-red-500'; }
-                          else { bg = 'bg-blue-600'; textColor = 'text-white'; border = 'border-blue-600'; }
-                        }
-                        return (
-                          <div key={idx} className="flex items-center flex-1">
-                            <div className="flex flex-col items-center">
-                              <div className={`w-9 h-9 rounded-full ${bg} border-2 ${border} flex items-center justify-center text-sm font-black ${textColor} shadow-sm`}>
-                                {done ? '✓' : active ? (isRejectedOrDelayed ? '✗' : '●') : (idx + 1)}
-                              </div>
-                              <p className={`text-xs font-semibold mt-1.5 text-center leading-tight ${active ? (isRejectedOrDelayed ? 'text-red-600' : 'text-blue-600') : 'text-slate-400'}`}>{step.label}</p>
-                              {isRejectedOrDelayed && active && (
-                                <p className="text-[10px] text-red-500 font-medium mt-0.5">{viewOrder.status === 'warehouse_rejected' ? 'Kho từ chối' : 'Dời ngày'}</p>
-                              )}
-                            </div>
-                            {idx < steps.length - 1 && (
-                              <div className={`flex-1 h-1 mx-1 rounded-full ${done ? 'bg-green-400' : 'bg-slate-200'}`} />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {/* Chi tiết phiếu xuất kho */}
-                    {viewOrder.outboundNote && (
-                      <div className="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2">
-                        <svg className="w-4 h-4 text-blue-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd"/></svg>
-                        <p className="text-xs text-slate-500">Phiếu xuất kho: <span className="font-mono font-semibold text-slate-700">{viewOrder.outboundNote.noteNo}</span> · {viewOrder.outboundNote.warehouse?.name || viewOrder.outboundNote.warehouseId}</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {viewOrder.note && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                  <p className="text-xs font-bold text-slate-500 mb-2">Ghi chú</p>
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{viewOrder.note}</p>
-                </div>
-              )}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">SKU</th>
-                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">Sản phẩm</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase">SL</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase">Đơn giá</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase">Thành tiền</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {viewOrder.items.map(i => (
-                      <tr key={i.id}>
-                        <td className="px-4 py-3 font-mono text-blue-600 text-xs">{i.product?.sku}</td>
-                        <td className="px-4 py-3 font-medium text-slate-700">{i.product?.name}</td>
-                        <td className="px-4 py-3 text-right font-bold">{i.quantity}</td>
-                        <td className="px-4 py-3 text-right">{VND(Number(i.unitPrice))} đ</td>
-                        <td className="px-4 py-3 text-right font-extrabold text-slate-900">{VND(i.quantity * Number(i.unitPrice))} đ</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-slate-50">
-                    <tr>
-                      <td colSpan={4} className="px-4 py-3 text-right font-extrabold text-slate-700">Tổng cộng:</td>
-                      <td className="px-4 py-3 text-right font-black text-blue-600">{VND(viewOrder.items.reduce((s, i) => s + i.quantity * Number(i.unitPrice), 0))} đ</td>
-                    </tr>
-                  </tfoot>
-                </table>
-                </div>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '13px 14px', borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', outline: 'none', fontSize: 14 }}>
+                <option value="all">Tất cả trạng thái</option>
+                {Object.entries(statusConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '0 14px', borderRadius: 14, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 700, fontSize: 13 }}>
+                {filtered.length} / {orders.length} đơn
               </div>
-              <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setViewOrder(null)}>Đóng</Button>
-              </div>
-            </div>
-          )}
-        </Modal>
-
-        {/* ===== ERROR / REASON MODAL ===== */}
-        {errorOrder && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            style={{ animation: 'fadeIn 180ms ease-out' }}>
-            <div className="bg-white rounded-3xl border border-red-200 w-full max-w-lg p-7 shadow-2xl"
-              style={{ animation: 'scaleIn 220ms ease-out' }}>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold">ĐƠN BỊ TỪ CHỐI — SAI THÔNG TIN</span>
-              </div>
-              <h3 className="text-xl font-black text-slate-900 mb-2">Chi tiết lỗi đơn {errorOrder.orderNo}</h3>
-              <p className="text-sm text-slate-500 mb-4">Đơn đã bị Logistics từ chối do sai thông tin. Sale có thể sửa lại đơn hoặc xóa vĩnh viễn.</p>
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-5 max-h-60 overflow-y-auto">
-                <p className="text-sm text-red-800 whitespace-pre-wrap font-medium">{errorOrder.note || 'Không có ghi chú lỗi.'}</p>
-              </div>
-              <div className="flex justify-between gap-3 flex-wrap">
-                <Button variant="outline" onClick={() => setErrorOrder(null)}>Đóng</Button>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleDelete(errorOrder)}
-                    className="px-4 py-2 rounded-xl border border-red-200 bg-white text-red-600 text-sm font-bold hover:bg-red-50 transition-all cursor-pointer"
-                  >
-                    Xóa vĩnh viễn
-                  </button>
-                  <button
-                    onClick={() => openEdit(errorOrder)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-600 to-orange-400 text-white text-sm font-extrabold shadow-md hover:shadow-lg transition-all cursor-pointer"
-                  >
-                    Sửa &amp; Gửi lại
-                  </button>
-                </div>
-              </div>
+              <button onClick={() => { setSearch(''); setStatusFilter('all'); }} style={{ padding: '12px 16px', borderRadius: 14, border: '1px solid #dbe3ee', background: '#fff', color: '#334155', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>Xóa lọc</button>
             </div>
           </div>
-        )}
 
-        {/* ===== CANCEL REASON MODAL ===== */}
-        {cancelOrder && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            style={{ animation: 'fadeIn 180ms ease-out' }}>
-            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-2xl overflow-hidden shadow-2xl"
-              style={{ animation: 'scaleIn 220ms ease-out' }}>
-              <div className="px-7 py-5 bg-gradient-to-b from-pink-50 to-white border-b border-slate-100 flex items-start justify-between gap-4">
-                <div>
-                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-extrabold mb-3">ĐƠN ĐÃ HỦY</span>
-                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Lý do hủy đơn {cancelOrder.orderNo}</h3>
-                  <p className="text-sm text-slate-500 mt-1">Xem chi tiết vì sao đơn này bị hủy.</p>
-                </div>
-                <button onClick={() => setCancelOrder(null)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-700 font-black text-xl hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
-                  ×
-                </button>
-              </div>
-              <div className="p-7 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                    <p className="text-xs font-bold text-slate-500 mb-2">Khách hàng</p>
-                    <p className="font-extrabold text-slate-900">{cancelOrder.customer?.name || '-'}</p>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                    <p className="text-xs font-bold text-slate-500 mb-2">Ngày hủy</p>
-                    <p className="font-extrabold text-slate-900">{cancelOrder.updatedAt ? dayjs(cancelOrder.updatedAt).format('DD/MM/YYYY HH:mm') : '-'}</p>
-                  </div>
-                </div>
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-                  <p className="text-xs font-bold text-red-600 mb-2">Lý do hủy</p>
-                  <p className="text-sm text-red-800 whitespace-pre-wrap font-medium">{cancelOrder.note || 'Không có ghi chú hủy.'}</p>
-                </div>
-                <div className="flex justify-end">
-                  <button onClick={() => setCancelOrder(null)} className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 to-rose-400 text-white font-extrabold shadow-md hover:shadow-lg transition-all cursor-pointer">
-                    Đóng
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===== WAREHOUSE REJECTED / DELAYED MODAL ===== */}
-        {warehouseRejectedOrder && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            style={{ animation: 'fadeIn 180ms ease-out' }}>
-            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-2xl overflow-hidden shadow-2xl"
-              style={{ animation: 'scaleIn 220ms ease-out' }}>
-              <div className={`px-7 py-5 border-b border-slate-100 flex items-start justify-between gap-4 ${
-                warehouseRejectedOrder.status === 'warehouse_rejected'
-                  ? 'bg-gradient-to-b from-red-50 to-white'
-                  : 'bg-gradient-to-b from-amber-50 to-white'
-              }`}>
-                <div>
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold mb-3 ${
-                    warehouseRejectedOrder.status === 'warehouse_rejected'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {warehouseRejectedOrder.status === 'warehouse_rejected' ? 'KHO TỪ CHỐI ĐƠN' : 'KHO DỜI NGÀY GIAO'}
-                  </span>
-                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Xử lý đơn {warehouseRejectedOrder.orderNo}</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {warehouseRejectedOrder.status === 'warehouse_rejected'
-                      ? 'Kho đã từ chối đơn. Bạn có thể dời ngày hoặc tạo lại đơn mới.'
-                      : 'Kho đã dời ngày giao. Xác nhận để kho giao lại hoặc tạo đơn mới.'}
-                  </p>
-                </div>
-                <button onClick={() => setWarehouseRejectedOrder(null)} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white flex items-center justify-center text-slate-700 font-black text-xl hover:bg-slate-50 transition-all cursor-pointer flex-shrink-0">
-                  ×
-                </button>
-              </div>
-
-              <div className="p-7 space-y-5">
-                {/* Order info */}
-                <div className={`rounded-2xl p-4 border ${
-                  warehouseRejectedOrder.status === 'warehouse_rejected'
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-amber-50 border-amber-200'
-                }`}>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div><span className="text-slate-500">Khách hàng:</span> <span className="font-semibold text-slate-800 ml-1">{warehouseRejectedOrder.customer?.name || '-'}</span></div>
-                    <div><span className="text-slate-500">Mã đơn:</span> <span className="font-mono font-semibold text-blue-600 ml-1">{warehouseRejectedOrder.orderNo}</span></div>
-                    <div><span className="text-slate-500">Ngày đặt:</span> <span className="font-semibold text-slate-800 ml-1">{dayjs(warehouseRejectedOrder.orderDate).format('DD/MM/YYYY')}</span></div>
-                    <div><span className="text-slate-500">Dự kiến giao:</span> <span className="font-semibold text-slate-800 ml-1">{warehouseRejectedOrder.expectedDeliveryDate ? dayjs(warehouseRejectedOrder.expectedDeliveryDate).format('DD/MM/YYYY') : '—'}</span></div>
-                  </div>
-                  {warehouseRejectedOrder.note && (
-                    <div className="mt-3 pt-3 border-t border-slate-200/60">
-                      <span className="text-xs font-bold text-slate-500">Lý do kho:</span>
-                      <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{warehouseRejectedOrder.note}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action choices */}
-                <div className="space-y-3">
-                  <p className="text-sm font-bold text-slate-700">Chọn hành động:</p>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Option 1: Xác nhận dời ngày */}
-                    <button
-                      onClick={() => setWrAction('confirm_delay')}
-                      className={`rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
-                        wrAction === 'confirm_delay'
-                          ? 'border-amber-400 bg-amber-50 shadow-md'
-                          : 'border-slate-200 bg-white hover:border-amber-200 hover:bg-amber-50/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                          wrAction === 'confirm_delay' ? 'bg-amber-400 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/></svg>
+          {/* Table */}
+          <div style={{ overflowX: 'auto', borderRadius: 18, border: '1px solid #e2e8f0', margin: '0 24px 24px' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <thead><tr style={{ background: '#f8fafc' }}>
+                <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Mã đơn</th>
+                <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Khách hàng</th>
+                <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Ngày giao dự kiến</th>
+                <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Trạng thái</th>
+                <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Hành động</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(o => {
+                  const s = statusConfig[o.status] ? o.status : 'pending';
+                  const cfg = statusConfig[s];
+                  const ts = toneStyle[cfg.tone];
+                  return (
+                    <tr key={o.id} style={{ borderTop: '1px solid #e2e8f0', background: '#fff' }}>
+                      <td style={{ padding: '16px 18px', fontWeight: 800, color: '#2563eb', fontSize: 14 }}>{o.order_no}</td>
+                      <td style={{ padding: '16px 18px', color: '#334155', fontSize: 14 }}>{o.customer_name}</td>
+                      <td style={{ padding: '16px 18px', color: '#334155', fontSize: 14 }}>{o.expected_delivery_date}</td>
+                      <td style={{ padding: '16px 18px' }}>
+                        <span style={{ ...ts, display: 'inline-flex', alignItems: 'center', padding: '8px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800 }}>
+                          {cfg.label}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 18px' }}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {s === 'pending' && (
+                            <>
+                              <button onClick={() => handleCancel(o.id)} title="Hủy đơn" style={{ padding: '8px 14px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10, color: '#dc2626', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                                Hủy
+                              </button>
+                              <button onClick={() => handleDelete(o.id)} title="Xóa" style={{ padding: '8px 14px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 10, color: '#334155', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
+                                Xóa
+                              </button>
+                            </>
+                          )}
+                          {s === 'completed' && (
+                            <button onClick={() => setViewOrder(o)} style={{ padding: '8px 14px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 10, color: '#334155', cursor: 'pointer', fontSize: 12 }}>
+                              Xem
+                            </button>
+                          )}
                         </div>
-                        <span className="font-extrabold text-slate-900">Dời ngày giao</span>
-                      </div>
-                      <p className="text-xs text-slate-500">Giữ thông tin hiện tại, cập nhật ngày giao mới. Đơn quay về chờ duyệt.</p>
-                    </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>Không có đơn hàng nào.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-                    {/* Option 2: Tạo lại đơn */}
-                    <button
-                      onClick={() => setWrAction('recreate')}
-                      className={`rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
-                        wrAction === 'recreate'
-                          ? 'border-orange-400 bg-orange-50 shadow-md'
-                          : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                          wrAction === 'recreate' ? 'bg-orange-400 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/></svg>
-                        </div>
-                        <span className="font-extrabold text-slate-900">Tạo lại đơn</span>
-                      </div>
-                      <p className="text-xs text-slate-500">Mở form tạo đơn mới với mã cũ đã bị xóa. Thông tin sản phẩm được giữ lại.</p>
-                    </button>
+        {/* View Order Modal */}
+        {viewOrder && (
+          <div className="modal-animate" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.68)', backdropFilter: 'blur(8px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 20 }}>
+            <div className="modal-panel-animate" style={{ width: 'min(760px, 100%)', borderRadius: 28, overflow: 'hidden', background: '#fff', border: '1px solid rgba(59,130,246,0.16)', boxShadow: '0 30px 90px rgba(15,23,42,0.32)' }}>
+              <div style={{ padding: 22, borderBottom: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ display: 'inline-flex', padding: '7px 12px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontWeight: 800, fontSize: 12, marginBottom: 14 }}>ĐƠN HÀNG ĐÃ HOÀN TẤT</div>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 26, color: '#0f172a' }}>Chi tiết đơn {viewOrder.order_no}</h3>
+                    <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>Tổng hợp thông tin đơn hàng.</p>
+                  </div>
+                  <button onClick={() => setViewOrder(null)} style={{ width: 42, height: 42, borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontWeight: 800, fontSize: 18 }}>×</button>
+                </div>
+              </div>
+              <div style={{ padding: 22 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
+                  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 18, padding: 16 }}>
+                    <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700, marginBottom: 8 }}>Khách hàng</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>{viewOrder.customer_name}</div>
+                  </div>
+                  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 18, padding: 16 }}>
+                    <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700, marginBottom: 8 }}>Ngày giao dự kiến</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>{viewOrder.expected_delivery_date}</div>
+                  </div>
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 18, padding: 16, gridColumn: '1 / -1' }}>
+                    <div style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 700, marginBottom: 8 }}>Ghi chú / Địa chỉ giao</div>
+                    <div style={{ fontSize: 16, color: '#1e3a8a', lineHeight: 1.5 }}>{viewOrder.note || 'Không có'}</div>
                   </div>
                 </div>
-
-                {/* Date picker for confirm_delay */}
-                {wrAction === 'confirm_delay' && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Ngày giao mới (Demo: có thể chọn hôm nay)</label>
-                    <input
-                      type="date"
-                      value={wrExpectedDate}
-                      onChange={e => setWrExpectedDate(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-amber-300 bg-white text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400"
-                    />
-                    <p className="text-xs text-amber-600 mt-2">Đơn sẽ quay về trạng thái "Chờ duyệt". Logistics sẽ xử lý lại.</p>
-                  </div>
-                )}
-
-                {wrAction === 'recreate' && (
-                  <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
-                    <p className="text-sm font-bold text-slate-800 mb-1">Tạo lại đơn hàng</p>
-                    <p className="text-xs text-slate-500">Nhấn "Tạo lại đơn" sẽ mở form với thông tin sản phẩm được giữ lại. Bạn có thể chỉnh sửa và gửi lại.</p>
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-3 pt-2">
-                  <Button variant="outline" onClick={() => setWarehouseRejectedOrder(null)}>Đóng</Button>
-                  <button
-                    onClick={handleWarehouseRejectConfirm}
-                    className={`px-6 py-2.5 rounded-2xl font-extrabold text-white shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer ${
-                      wrAction === 'confirm_delay'
-                        ? 'bg-gradient-to-r from-amber-600 to-orange-500'
-                        : 'bg-gradient-to-r from-orange-600 to-red-500'
-                    }`}
-                  >
-                    {wrAction === 'confirm_delay' ? '✓ Xác nhận dời ngày' : '+ Tạo lại đơn'}
-                  </button>
-                </div>
+                <button onClick={() => setViewOrder(null)} style={{ padding: '12px 18px', background: 'linear-gradient(135deg, #2563eb, #60a5fa)', color: 'white', border: 'none', borderRadius: 14, cursor: 'pointer', fontWeight: 800, boxShadow: '0 14px 28px rgba(37,99,235,0.18)' }}>Đóng</button>
               </div>
             </div>
           </div>
         )}
-
-        <style>{`
-          @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-          @keyframes scaleIn { from { opacity: 0; transform: scale(0.96) translateY(10px) } to { opacity: 1; transform: scale(1) translateY(0) } }
-        `}</style>
       </div>
     </AppLayout>
   );

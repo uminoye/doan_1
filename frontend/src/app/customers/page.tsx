@@ -1,164 +1,123 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Card, Modal, Pagination, EmptyState, Spinner } from '@/components/ui/Misc';
-import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
 import { customerService } from '@/services';
-import { Customer, PaginatedResponse } from '@/types';
 
 export default function CustomersPage() {
-  const [data, setData] = useState<PaginatedResponse<Customer> | null>(null);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState<Customer | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ customerCode: '', name: '', phone: '', address: '', contactPerson: '' });
-  const [error, setError] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<any>(null);
+  const [form, setForm] = useState({ company_name: '', phone: '', address: '', contact_person: '' });
 
-  const generateNextCode = useCallback(async (): Promise<string> => {
-    try {
-      const res = await customerService.getAll({ page: 1, limit: 1000 });
-      const codes = res.data.data.map((c: Customer) => {
-        const m = c.customerCode.match(/KH-(\d+)/);
-        return m ? parseInt(m[1]) : 0;
-      });
-      const maxNum = codes.length ? Math.max(...codes) : 0;
-      return `KH-${String(maxNum + 1).padStart(4, '0')}`;
-    } catch {
-      return `KH-0001`;
-    }
-  }, []);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await customerService.getAll({ page, limit: 15, search: search || undefined });
-      setData(res.data);
-    } catch (e: any) { setError(e.response?.data?.error || 'Lỗi tải dữ liệu'); }
+  const fetch = async () => {
+    try { const r = await customerService.getAll(); setCustomers(r.data); }
+    catch { alert('Lỗi tải dữ liệu'); }
     finally { setLoading(false); }
-  }, [page, search]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const openCreate = async () => {
-    setEditItem(null);
-    setError('');
-    const nextCode = await generateNextCode();
-    setForm({ customerCode: nextCode, name: '', phone: '', address: '', contactPerson: '' });
-    setShowModal(true);
   };
 
-  const openEdit = (c: Customer) => {
-    setEditItem(c);
-    setForm({ customerCode: c.customerCode, name: c.name, phone: c.phone || '', address: c.address || '', contactPerson: c.contactPerson || '' });
-    setError('');
-    setShowModal(true);
+  useEffect(() => { fetch(); }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try { await customerService.create(form); alert('Thêm khách hàng thành công!'); setIsOpen(false); setForm({ company_name: '', phone: '', address: '', contact_person: '' }); fetch(); }
+    catch (err: any) { alert(err.response?.data?.message || 'Lỗi'); }
   };
 
-  const handleSave = async () => {
-    setSaving(true); setError('');
-    try {
-      const payload = { customerCode: form.customerCode, name: form.name, phone: form.phone || undefined, address: form.address || undefined, contactPerson: form.contactPerson || undefined };
-      if (editItem) await customerService.update(editItem.id, payload);
-      else await customerService.create(payload);
-      setShowModal(false); fetchData();
-    } catch (e: any) { setError(e.response?.data?.error || 'Lỗi lưu dữ liệu'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Bạn có chắc muốn xóa?')) return;
-    try { await customerService.delete(id); fetchData(); }
-    catch (e: any) { alert(e.response?.data?.error || 'Lỗi xóa dữ liệu'); }
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    try { await customerService.delete(deleteConfirm.id); alert('Xóa thành công!'); setDeleteConfirm(null); fetch(); }
+    catch (err: any) { alert(err.response?.data?.message || 'Lỗi'); }
   };
 
   return (
     <AppLayout>
-      <div className="space-y-5">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Quản lý Khách hàng</h1>
-          <p className="text-sm text-gray-500 mt-1">Danh sách khách hàng mua hàng</p>
+      <div style={{ padding: '16px', background: '#f7fafc', minHeight: '100vh' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <div>
+            <h2 style={{ color: '#0f172a', margin: 0, fontSize: 28 }}>Khách hàng</h2>
+            <p style={{ margin: '6px 0 0', color: '#64748b' }}>{customers.length} khách hàng trong hệ thống</p>
+          </div>
+          <button onClick={() => setIsOpen(true)} style={{ padding: '12px 18px', background: '#10b981', color: 'white', border: 'none', borderRadius: 12, cursor: 'pointer', fontWeight: 700 }}>
+            + Thêm khách hàng
+          </button>
         </div>
 
-        <Card className="p-0">
-          {/* Card Header - Search + Add Button */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-              <Input
-                placeholder="Tìm kiếm..."
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1); }}
-                className="pl-9 w-64"
-              />
-            </div>
-            <Button onClick={openCreate}>+ Thêm mới</Button>
-          </div>
-
-          {/* Table */}
-          {loading ? <div className="flex justify-center py-12"><Spinner /></div> : !data?.data.length ? <EmptyState icon="👥" message="Chưa có khách hàng nào" /> : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Mã KH</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Tên khách hàng</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Điện thoại</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Địa chỉ</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Người LH</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {data.data.map(c => (
-                    <tr key={c.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-mono font-medium text-blue-600">{c.customerCode}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
-                      <td className="px-4 py-3 text-gray-600">{c.phone || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{c.address || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600">{c.contactPerson || '-'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>Sửa</Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id)} className="text-red-500 hover:bg-red-50">Xóa</Button>
-                        </div>
+        <div style={{ background: '#fff', borderRadius: 22, padding: 20, boxShadow: '0 14px 35px rgba(15,23,42,0.08)', border: '1px solid #e2e8f0' }}>
+          {loading ? <p style={{ color: '#94a3b8' }}>Đang tải...</p> : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                <thead><tr style={{ background: '#f8fafc' }}>
+                  <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Tên công ty</th>
+                  <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Điện thoại</th>
+                  <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Địa chỉ</th>
+                  <th style={{ textAlign: 'left', padding: '14px 18px', color: '#475569', fontSize: 13 }}>Người liên hệ</th>
+                  <th style={{ width: 90 }}></th>
+                </tr></thead>
+                <tbody>
+                  {customers.map(c => (
+                    <tr key={c.id} style={{ borderTop: '1px solid #e2e8f0', background: '#fff' }}>
+                      <td style={{ padding: '16px 18px', fontWeight: 700, color: '#0f172a' }}>{c.company_name || c.name}</td>
+                      <td style={{ padding: '16px 18px', color: '#334155' }}>{c.phone || '-'}</td>
+                      <td style={{ padding: '16px 18px', color: '#334155' }}>{c.address || '-'}</td>
+                      <td style={{ padding: '16px 18px', color: '#334155' }}>{c.contact_person || '-'}</td>
+                      <td style={{ padding: '16px 18px' }}>
+                        <button onClick={() => setDeleteConfirm(c)} style={{ padding: '8px 14px', background: '#fff5f5', border: '1px solid #fee2e2', borderRadius: 10, color: '#ef4444', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>Xóa</button>
                       </td>
                     </tr>
                   ))}
+                  {customers.length === 0 && <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>Chưa có khách hàng nào.</td></tr>}
                 </tbody>
               </table>
             </div>
           )}
-          {data && <div className="p-4 border-t"><Pagination page={page} totalPages={data.pagination.totalPages} total={data.pagination.total} onPageChange={setPage} /></div>}
-        </Card>
-      </div>
-
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Sửa khách hàng' : 'Thêm khách hàng'}>
-        <div className="space-y-4">
-          {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Mã khách hàng"
-              value={form.customerCode}
-              onChange={e => setForm({ ...form, customerCode: e.target.value })}
-              required
-              disabled={!editItem}
-            />
-            <Input label="Tên khách hàng" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-          </div>
-          <Input label="Điện thoại" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-          <Input label="Địa chỉ" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
-          <Input label="Người liên hệ" value={form.contactPerson} onChange={e => setForm({ ...form, contactPerson: e.target.value })} />
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => setShowModal(false)}>Hủy</Button>
-            <Button onClick={handleSave} loading={saving}>{editItem ? 'Lưu thay đổi' : 'Thêm mới'}</Button>
-          </div>
         </div>
-      </Modal>
+
+        {isOpen && (
+          <div className="modal-animate" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 16 }}>
+            <div className="modal-panel-animate" style={{ background: '#fff', padding: 30, borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+              <h3 style={{ color: '#16a34a', marginTop: 0 }}>Thêm khách hàng mới</h3>
+              <form onSubmit={handleSubmit}>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#475569' }}>Tên công ty *</label>
+                  <input required placeholder="Công ty TNHH ABC" value={form.company_name} onChange={e => setForm({ ...form, company_name: e.target.value })} style={{ width: '100%', padding: '12px 14px', border: '1px solid #dbe3ea', borderRadius: 12, outline: 'none', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#475569' }}>Điện thoại</label>
+                    <input placeholder="024-12345678" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} style={{ width: '100%', padding: '12px 14px', border: '1px solid #dbe3ea', borderRadius: 12, outline: 'none', fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#475569' }}>Người liên hệ</label>
+                    <input placeholder="Nguyễn Văn A" value={form.contact_person} onChange={e => setForm({ ...form, contact_person: e.target.value })} style={{ width: '100%', padding: '12px 14px', border: '1px solid #dbe3ea', borderRadius: 12, outline: 'none', fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: '#475569' }}>Địa chỉ</label>
+                  <input placeholder="Hà Nội" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} style={{ width: '100%', padding: '12px 14px', border: '1px solid #dbe3ea', borderRadius: 12, outline: 'none', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button type="button" onClick={() => setIsOpen(false)} style={{ flex: 1, height: 48, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, cursor: 'pointer', color: '#64748b', fontWeight: 700 }}>Hủy</button>
+                  <button type="submit" style={{ flex: 1, height: 48, background: '#10b981', color: 'white', border: 'none', borderRadius: 12, cursor: 'pointer', fontWeight: 700, boxShadow: '0 12px 24px rgba(16,185,129,0.22)' }}>Lưu</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {deleteConfirm && (
+          <div className="modal-animate" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200, padding: 16 }}>
+            <div className="modal-panel-animate" style={{ background: '#fff', padding: 28, borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+              <h3 style={{ marginTop: 0, color: '#b91c1c' }}>Xóa khách hàng</h3>
+              <p style={{ color: '#334155', lineHeight: 1.6 }}>Xóa <strong>"{deleteConfirm.company_name}"</strong>?</p>
+              <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+                <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, height: 46, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, cursor: 'pointer', fontWeight: 700 }}>Hủy</button>
+                <button onClick={handleDelete} style={{ flex: 1, height: 46, background: '#ef4444', color: 'white', border: 'none', borderRadius: 12, cursor: 'pointer', fontWeight: 700 }}>Xóa</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </AppLayout>
   );
 }
