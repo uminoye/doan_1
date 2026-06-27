@@ -24,7 +24,7 @@ router.get('/dashboard', async (req, res) => {
         where: { onHandQty: { gt: 0 } },
         include: { product: true },
       }).then(balances =>
-        balances.filter(b => b.product && b.onHandQty < b.product.minStock)
+        balances.filter(b => b.product && b.onHandQty < b.product.minStock).length
       ),
       prisma.salesOrder.findMany({
         take: 10,
