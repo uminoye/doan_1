@@ -47,6 +47,7 @@ const menuSections: MenuSection[] = [
       { label: 'Tiếp nhận Giao hàng', href: '/logistics/', icon: '🚚', color: 'text-blue-400', roles: ['admin', 'logistics'] },
       { label: 'Phiếu Nhập Kho', href: '/production-receipts/', icon: '📥', color: 'text-blue-400', roles: ['admin', 'warehouse', 'factory'] },
       { label: 'Phiếu Xuất Kho', href: '/warehouse-outbound/', icon: '📤', color: 'text-blue-400', roles: ['admin', 'warehouse'] },
+      { label: 'Quản lý Kho hàng', href: '/inventory/', icon: '🏬', color: 'text-green-400', roles: ['admin', 'warehouse'] },
     ],
   },
   {

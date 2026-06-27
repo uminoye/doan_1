@@ -166,7 +166,6 @@ export default function WarehouseOutboundPage() {
   const [outboundPage, setOutboundPage] = useState(1);
   const [outboundLoading, setOutboundLoading] = useState(true);
   const [outboundSearch, setOutboundSearch] = useState('');
-  const [outboundStatus, setOutboundStatus] = useState('');
 
   // ── Pending list ─────────────────────────────────────────────
   const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
@@ -197,24 +196,27 @@ export default function WarehouseOutboundPage() {
 
   // Sale action modal
   const [saleAction, setSaleAction] = useState<'view' | 'delay'>('view');
+  const [delayDate, setDelayDate] = useState(dayjs().add(3, 'day').format('YYYY-MM-DD'));
 
   // ── Load data ─────────────────────────────────────────────────
   const loadWarehouses = useCallback(async () => {
     try {
       const res = await warehouseService.getAll();
-      setWarehouses(res.data || []);
-      if (res.data[0]) setCreateForm(f => ({ ...f, warehouseId: res.data[0].id }));
+      // Ẩn kho hàng lỗi khỏi dropdown xuất kho
+      setWarehouses((res.data || []).filter((w: Warehouse) => !w.isDefectiveWarehouse));
+      const good = (res.data || []).filter((w: Warehouse) => !w.isDefectiveWarehouse);
+      if (good[0]) setCreateForm(f => ({ ...f, warehouseId: good[0].id }));
     } catch (e) { console.error(e); }
   }, []);
 
   const loadOutbound = useCallback(async (showLoading = false) => {
     if (showLoading) setOutboundLoading(true);
     try {
-      const res = await stockOutboundService.getAll({ page: outboundPage, limit: 10, status: outboundStatus || undefined });
+      const res = await stockOutboundService.getAll({ page: outboundPage, limit: 10 });
       setOutboundData(res.data);
     } catch (e) { console.error(e); }
     finally { setOutboundLoading(false); }
-  }, [outboundPage, outboundStatus]);
+  }, [outboundPage]);
 
   const loadPending = useCallback(async (showLoading = false) => {
     if (showLoading) setPendingLoading(true);
@@ -791,14 +793,14 @@ export default function WarehouseOutboundPage() {
                   <label className="block text-sm font-bold text-slate-700 mb-2">Ngày giao dự kiến mới <span className="text-red-500">*</span></label>
                   <Input
                     type="date"
-                    value={dayjs().add(3, 'day').format('YYYY-MM-DD')}
-                    onChange={e => {}}
+                    value={delayDate}
+                    onChange={e => setDelayDate(e.target.value)}
                   />
                 </div>
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={() => setSaleAction('view')} className="flex-1">← Quay lại</Button>
                   <Button
-                    onClick={() => handleSaleDelayToWarehouse(dayjs().add(3, 'day').format('YYYY-MM-DD'))}
+                    onClick={() => handleSaleDelayToWarehouse(delayDate)}
                     loading={saving}
                     className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
                   >

@@ -109,7 +109,7 @@ export default function ProductsPage() {
   const loadCategories = useCallback(async () => {
     try {
       const res = await categoryService.getAll();
-      setCategories(res.data.map((c: Category) => c.name));
+      setCategories(Array.isArray(res.data) ? res.data.map((c: Category) => c.name) : (res.data?.data?.map((c: Category) => c.name) || []));
     } catch {}
   }, []);
 

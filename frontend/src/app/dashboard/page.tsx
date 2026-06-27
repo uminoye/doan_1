@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, StatCard, Spinner, Badge } from '@/components/ui/Misc';
 import { reportService } from '@/services';
-import { DashboardStats, ORDER_STATUS_LABELS } from '@/types';
+import { DashboardStats, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/types';
 import dayjs from 'dayjs';
 
 function DashboardContent() {
@@ -42,8 +42,8 @@ function DashboardContent() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Đơn đang xử lý" value={totals.pendingOrders} icon="⏳" color="yellow" />
         <StatCard label="Đơn hoàn thành" value={totals.completedOrders} icon="✅" color="green" />
-        <StatCard label="Tổng nhập (số lượng)" value={totals.totalInbound.toLocaleString()} icon="📥" color="blue" />
-        <StatCard label="Tổng xuất (số lượng)" value={totals.totalOutbound.toLocaleString()} icon="📤" color="red" />
+        <StatCard label="Tổng nhập (số lượng)" value={(totals.totalInbound || 0).toLocaleString()} icon="📥" color="blue" />
+        <StatCard label="Tổng xuất (số lượng)" value={(totals.totalOutbound || 0).toLocaleString()} icon="📤" color="red" />
       </div>
 
       {/* Tables */}
@@ -68,7 +68,7 @@ function DashboardContent() {
                     <td className="px-4 py-3 font-medium text-blue-600">{order.orderNo}</td>
                     <td className="px-4 py-3 text-gray-700">{order.customerName}</td>
                     <td className="px-4 py-3">
-                      <span className={`status-${order.status} px-2 py-0.5 rounded text-xs`}>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${ORDER_STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-600'}`}>
                         {ORDER_STATUS_LABELS[order.status] || order.status}
                       </span>
                     </td>
@@ -113,15 +113,15 @@ function DashboardContent() {
       <Card title="Tồn kho tổng hợp">
         <div className="grid grid-cols-3 gap-6 text-center">
           <div className="p-4 bg-blue-50 rounded-xl">
-            <p className="text-3xl font-bold text-blue-600">{totals.totalInbound.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-blue-600">{(totals.totalInbound || 0).toLocaleString()}</p>
             <p className="text-sm text-blue-500 mt-1">Tổng nhập</p>
           </div>
           <div className="p-4 bg-red-50 rounded-xl">
-            <p className="text-3xl font-bold text-red-600">{totals.totalOutbound.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-red-600">{(totals.totalOutbound || 0).toLocaleString()}</p>
             <p className="text-sm text-red-500 mt-1">Tổng xuất</p>
           </div>
           <div className="p-4 bg-green-50 rounded-xl">
-            <p className="text-3xl font-bold text-green-600">{totals.totalBalance.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-green-600">{(totals.totalBalance || 0).toLocaleString()}</p>
             <p className="text-sm text-green-500 mt-1">Tồn kho hiện tại</p>
           </div>
         </div>

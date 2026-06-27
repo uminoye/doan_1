@@ -13,6 +13,7 @@ export class ReportService {
       include: { warehouse: true, product: true },
     });
 
+    // Tách riêng kho hàng lỗi để đánh dấu
     return balances.map(b => ({
       warehouseId: b.warehouseId,
       warehouseName: b.warehouse.name,
@@ -25,7 +26,42 @@ export class ReportService {
       onHandQty: b.onHandQty,
       reservedQty: b.reservedQty,
       availableQty: b.onHandQty - b.reservedQty,
+      isDefective: b.warehouse.isDefectiveWarehouse,
     }));
+  }
+
+  async getDefectiveInventoryReport() {
+    const defectiveWarehouse = await prisma.warehouse.findFirst({
+      where: { isDefectiveWarehouse: true },
+    });
+    if (!defectiveWarehouse) return { warehouse: null, items: [] };
+
+    const balances = await prisma.inventoryBalance.findMany({
+      where: { warehouseId: defectiveWarehouse.id },
+      include: { warehouse: true, product: true },
+    });
+
+    return {
+      warehouse: {
+        id: defectiveWarehouse.id,
+        name: defectiveWarehouse.name,
+        warehouseCode: defectiveWarehouse.warehouseCode,
+        location: defectiveWarehouse.location,
+      },
+      items: balances.map(b => ({
+        warehouseId: b.warehouseId,
+        warehouseName: b.warehouse.name,
+        warehouseCode: b.warehouse.warehouseCode,
+        productId: b.productId,
+        productSku: b.product.sku,
+        productName: b.product.name,
+        unit: b.product.unit,
+        category: b.product.category,
+        onHandQty: b.onHandQty,
+        reservedQty: b.reservedQty,
+        availableQty: b.onHandQty - b.reservedQty,
+      })),
+    };
   }
 
   async getInboundReport(params?: { startDate?: string; endDate?: string; warehouseId?: string; productId?: string }) {

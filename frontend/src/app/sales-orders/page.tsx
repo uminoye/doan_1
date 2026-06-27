@@ -60,11 +60,9 @@ function StatCard({ label, value, color, children }: { label: string; value: num
 
 export default function SalesOrdersPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [hoveredStat, setHoveredStat] = useState<string | null>(null);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -96,7 +94,6 @@ export default function SalesOrdersPage() {
         productService.getAll({ limit: 200 }),
       ]);
       setOrders(oRes.data.data || []);
-      setTotal(oRes.data.pagination?.total || 0);
       setCustomers(cRes.data.data || []);
       setProducts(pRes.data.data || []);
     } catch (e) { console.error(e); }
@@ -330,8 +327,6 @@ export default function SalesOrdersPage() {
             <div
               style={{ '--accent': '#2563eb' } as React.CSSProperties}
               className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-              onMouseEnter={() => setHoveredStat('total')}
-              onMouseLeave={() => setHoveredStat(null)}
             >
               <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3 shadow-sm">
                 <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M4 7.5C4 6.12 5.12 5 6.5 5h11C18.88 5 20 6.12 20 7.5v9c0 1.38-1.12 2.5-2.5 2.5h-11C5.12 19 4 17.88 4 16.5v-9Z" stroke="currentColor" strokeWidth="1.8"/><path d="M8 9h8M8 12h8M8 15h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
@@ -342,8 +337,6 @@ export default function SalesOrdersPage() {
             <div
               style={{ '--accent': '#f59e0b' } as React.CSSProperties}
               className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-              onMouseEnter={() => setHoveredStat('pending')}
-              onMouseLeave={() => setHoveredStat(null)}
             >
               <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3 shadow-sm">
                 <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8"/></svg>
@@ -354,8 +347,6 @@ export default function SalesOrdersPage() {
             <div
               style={{ '--accent': '#16a34a' } as React.CSSProperties}
               className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-              onMouseEnter={() => setHoveredStat('completed')}
-              onMouseLeave={() => setHoveredStat(null)}
             >
               <div className="w-10 h-10 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center mb-3 shadow-sm">
                 <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M20 7 10 17l-5-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
@@ -366,8 +357,6 @@ export default function SalesOrdersPage() {
             <div
               style={{ '--accent': '#dc2626' } as React.CSSProperties}
               className="relative bg-white/90 backdrop-blur rounded-3xl p-5 shadow-md border border-slate-200 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl"
-              onMouseEnter={() => setHoveredStat('issues')}
-              onMouseLeave={() => setHoveredStat(null)}
             >
               <div className="w-10 h-10 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-3 shadow-sm">
                 <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><path d="m10.29 4.86-7.43 12.8A2 2 0 0 0 4.58 21h14.84a2 2 0 0 0 1.72-3.34l-7.43-12.8a2 2 0 0 0-3.44 0Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>

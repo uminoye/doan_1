@@ -14,15 +14,20 @@ export default function InboundReportPage() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [filters, setFilters] = useState({ startDate: '', endDate: '', warehouseId: '' });
 
+  // Load warehouses once on mount
+  useEffect(() => {
+    warehouseService.getAll().then(res => setWarehouses(res.data || [])).catch(console.error);
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [reportRes, wRes] = await Promise.all([
-        reportService.getInbound({ startDate: filters.startDate || undefined, endDate: filters.endDate || undefined, warehouseId: filters.warehouseId || undefined }),
-        warehouseService.getAll(),
-      ]);
-      setData(reportRes.data);
-      setWarehouses(wRes.data);
+      const res = await reportService.getInbound({
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate || undefined,
+        warehouseId: filters.warehouseId || undefined,
+      });
+      setData(res.data || []);
     } catch (e: any) { console.error(e); }
     finally { setLoading(false); }
   }, [filters]);
@@ -31,6 +36,7 @@ export default function InboundReportPage() {
 
   const totalIn = data.reduce((s, p) => s + p.totalIn, 0);
   const totalTx = data.reduce((s, p) => s + p.transactionCount, 0);
+  const distinctProducts = new Set(data.map(p => p.productId)).size;
 
   return (
     <AppLayout>
@@ -53,8 +59,8 @@ export default function InboundReportPage() {
         {/* Summary */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="text-center p-5">
-            <p className="text-3xl font-bold text-green-600">{data.length}</p>
-            <p className="text-sm text-gray-500 mt-1">Sản phẩm nhập</p>
+            <p className="text-3xl font-bold text-green-600">{distinctProducts}</p>
+            <p className="text-sm text-gray-500 mt-1">Sản phẩm nhập (distinct)</p>
           </Card>
           <Card className="text-center p-5">
             <p className="text-3xl font-bold text-blue-600">{totalTx}</p>

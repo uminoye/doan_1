@@ -593,10 +593,14 @@ export default function LogisticsPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // YÊU CẦU 2: Auto-start simulation khi shipment chuyển sang shipping (sau khi kho xuất hàng)
+  // Dùng ref để không trigger lại khi polling reload lại trackingShipment
+  const hasAutoStartedRef = useRef(false);
   useEffect(() => {
     if (!trackingShipment || !trackingOrder) return;
     if (trackingShipment.status === 'shipping' && !isSimulating && trackingShipment.currentStep < 4) {
+      if (hasAutoStartedRef.current) return; // Đã auto-start rồi, không chạy lại
       const timer = setTimeout(() => {
+        hasAutoStartedRef.current = true;
         setSimulationStep(1);
         setIsSimulating(true);
       }, 300);
@@ -717,6 +721,7 @@ export default function LogisticsPage() {
     setSimulatingPhase('');
     setShowRejectWarning(false);
     setRejectWarningReason('');
+    hasAutoStartedRef.current = false;
     try {
       const res = await shipmentService.getByOrderId(order.id);
       setTrackingShipment(res.data);

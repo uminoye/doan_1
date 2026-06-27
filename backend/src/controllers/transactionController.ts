@@ -208,6 +208,9 @@ export const reportController = {
       productId: productId as string,
     }));
   }),
+  getDefectiveInventory: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await reportService.getDefectiveInventoryReport());
+  }),
   getInbound: asyncHandler(async (req: Request, res: Response) => {
     const { startDate, endDate, warehouseId, productId } = req.query;
     res.json(await reportService.getInboundReport({

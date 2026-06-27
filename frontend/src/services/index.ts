@@ -329,6 +329,9 @@ export const reportService = {
   getInventory(params?: { warehouseId?: string; productId?: string }) {
     return api.get('/reports/inventory', { params });
   },
+  getDefectiveInventory() {
+    return api.get('/reports/inventory/defective');
+  },
   getInbound(params?: { startDate?: string; endDate?: string; warehouseId?: string; productId?: string }) {
     return api.get('/reports/inbound', { params });
   },

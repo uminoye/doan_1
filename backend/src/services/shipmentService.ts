@@ -212,10 +212,12 @@ export class ShipmentService {
         });
       }
 
-      // ── LÝ DO 3: Lỗi do Nhà máy → defective warehouse, KHÔNG cộng tồn ──
+      // ── LÝ DO 3: Lỗi do Nhà máy → ghi nhận vào kho lỗi để theo dõi, KHÔNG cộng tồn bán hàng ──
       else {
         const defectiveWh = await tx.warehouse.findFirst({ where: { isDefectiveWarehouse: true } });
         if (defectiveWh) {
+          // upsert để hiện trên trang /inventory/ (kho lỗi)
+          // Trang tồn kho hàng tốt đã filter theo isDefectiveWarehouse nên không bị trùng
           for (const item of order.items) {
             await tx.inventoryBalance.upsert({
               where: { warehouseId_productId: { warehouseId: defectiveWh.id, productId: item.productId } },
@@ -227,7 +229,7 @@ export class ShipmentService {
                 warehouseId: defectiveWh.id, productId: item.productId,
                 transactionType: 'IN', quantity: item.quantity,
                 referenceType: 'defective', referenceId: salesOrderId,
-                note: `Chuyển vào Kho Lỗi - Lý do: ${finalReason} - Đơn ${order.orderNo}`,
+                note: `Hàng lỗi (Nhà máy) - Đơn ${order.orderNo} bị từ chối.`,
               },
             });
           }
@@ -236,8 +238,8 @@ export class ShipmentService {
         await tx.deliveryRequest.updateMany({ where: { salesOrderId }, data: { status: 'canceled_shipping_error' } });
         await notificationService.create({
           type: 'customer_rejected', orderId: salesOrderId, shipmentId: shipment.id,
-          title: 'Hàng lỗi - Chuyển Kho Hàng Lỗi',
-          message: `Đơn ${order.orderNo}: "${finalReason}". Hàng đã chuyển vào Kho Hàng Lỗi - Phân loại.`,
+          title: 'Hàng lỗi - Chờ Kho xử lý',
+          message: `Đơn ${order.orderNo}: "${finalReason}". Hàng đang chờ Kho xử lý / thanh lý.`,
         });
       }
     });

@@ -15,17 +15,24 @@ export default function OutboundReportPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [filters, setFilters] = useState({ startDate: '', endDate: '', warehouseId: '', customerId: '' });
 
+  // Load warehouses + customers once on mount
+  useEffect(() => {
+    Promise.all([
+      warehouseService.getAll().then(r => setWarehouses(r.data || [])),
+      customerService.getAll({ limit: 100 }).then(r => setCustomers(r.data?.data || [])),
+    ]).catch(console.error);
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [reportRes, wRes, cRes] = await Promise.all([
-        reportService.getOutbound({ startDate: filters.startDate || undefined, endDate: filters.endDate || undefined, warehouseId: filters.warehouseId || undefined, customerId: filters.customerId || undefined }),
-        warehouseService.getAll(),
-        customerService.getAll({ limit: 100 }),
-      ]);
-      setData(reportRes.data);
-      setWarehouses(wRes.data);
-      setCustomers(cRes.data.data || []);
+      const res = await reportService.getOutbound({
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate || undefined,
+        warehouseId: filters.warehouseId || undefined,
+        customerId: filters.customerId || undefined,
+      });
+      setData(res.data || []);
     } catch (e: any) { console.error(e); }
     finally { setLoading(false); }
   }, [filters]);
@@ -34,6 +41,7 @@ export default function OutboundReportPage() {
 
   const totalQty = data.reduce((s, n) => s + n.totalQuantity, 0);
   const totalOrders = data.length;
+  const distinctProducts = new Set(data.flatMap(n => n.items.map((i: any) => i.productId))).size;
 
   return (
     <AppLayout>
@@ -60,8 +68,8 @@ export default function OutboundReportPage() {
             <p className="text-sm text-gray-500 mt-1">Lần xuất kho</p>
           </Card>
           <Card className="text-center p-5">
-            <p className="text-3xl font-bold text-blue-600">{data.reduce((s, n) => s + n.items.length, 0)}</p>
-            <p className="text-sm text-gray-500 mt-1">Sản phẩm xuất</p>
+            <p className="text-3xl font-bold text-blue-600">{distinctProducts}</p>
+            <p className="text-sm text-gray-500 mt-1">Sản phẩm xuất (distinct)</p>
           </Card>
           <Card className="text-center p-5">
             <p className="text-3xl font-bold text-red-700">{totalQty.toLocaleString()}</p>

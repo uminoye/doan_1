@@ -20,8 +20,16 @@ export default function InventoryReportPage() {
         reportService.getInventory({ warehouseId: warehouseId || undefined }),
         warehouseService.getAll(),
       ]);
-      setData(reportRes.data);
-      setWarehouses(wRes.data);
+      // Lọc bỏ kho hàng lỗi
+      const allWarehouses = wRes.data || [];
+      const goodWarehouseIds = allWarehouses
+        .filter((w: any) => !w.isDefectiveWarehouse)
+        .map((w: any) => w.id);
+      const filteredItems = (reportRes.data || []).filter(
+        (b: InventoryBalance) => !b.isDefective && goodWarehouseIds.includes(b.warehouseId)
+      );
+      setData(filteredItems);
+      setWarehouses(allWarehouses.filter((w: any) => !w.isDefectiveWarehouse));
     } catch (e: any) { console.error(e); }
     finally { setLoading(false); }
   }, [warehouseId]);
