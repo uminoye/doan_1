@@ -12,7 +12,7 @@ export default function Header() {
   };
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm">
+    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm flex-shrink-0">
       <div className="text-sm text-gray-600">
         Hệ thống Quản lý Kho hàng - Xuất Nhập Tồn
       </div>

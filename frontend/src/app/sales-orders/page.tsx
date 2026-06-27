@@ -795,7 +795,8 @@ export default function SalesOrdersPage() {
                 </div>
               )}
               <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">SKU</th>

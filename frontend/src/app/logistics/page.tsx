@@ -385,6 +385,7 @@ export default function LogisticsPage() {
                   <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Danh sách sản phẩm</p>
                   </div>
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
@@ -414,6 +415,7 @@ export default function LogisticsPage() {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 </div>
 
                 {/* 2 nút hành động */}

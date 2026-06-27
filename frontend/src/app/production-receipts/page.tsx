@@ -208,7 +208,8 @@ export default function ProductionReceiptsPage() {
               <Button variant="outline" size="sm" onClick={addItem}>+ Thêm dòng</Button>
             </div>
             <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase w-1/2">Sản phẩm</th>
@@ -240,6 +241,7 @@ export default function ProductionReceiptsPage() {
                   </tfoot>
                 )}
               </table>
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
@@ -300,16 +302,17 @@ export default function ProductionReceiptsPage() {
             </div>
             {detailItem.note && <div className="text-sm bg-gray-50 p-3 rounded-lg border"><span className="text-gray-500">Ghi chú:</span> <span className="ml-1">{detailItem.note}</span></div>}
             <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">SKU</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Sản phẩm</th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Số lượng</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {detailItem.items.map(i => (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">SKU</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Sản phẩm</th>
+                      <th className="px-4 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Số lượng</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {detailItem.items.map(i => (
                     <tr key={i.id}>
                       <td className="px-4 py-2 font-mono text-blue-600">{i.product?.sku}</td>
                       <td className="px-4 py-2">{i.product?.name}</td>
@@ -318,6 +321,7 @@ export default function ProductionReceiptsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
             <div className="flex justify-end"><Button variant="outline" onClick={() => setDetailItem(null)}>Đóng</Button></div>
           </div>

@@ -88,7 +88,7 @@ export default function Sidebar({ user }: SidebarProps) {
   return (
     <aside
       className={clsx(
-        'min-h-screen bg-slate-800 text-white flex flex-col flex-shrink-0 overflow-hidden',
+        'h-full min-h-0 bg-slate-800 text-white flex flex-col flex-shrink-0 overflow-hidden',
         'transition-all duration-300 ease-in-out',
         collapsed ? 'w-16' : 'w-56'
       )}

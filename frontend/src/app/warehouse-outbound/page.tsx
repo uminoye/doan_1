@@ -482,10 +482,11 @@ export default function WarehouseOutboundPage() {
             </div>
             {selectedNote.note && <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm"><span className="text-slate-500">Ghi chú:</span> <span className="ml-1 text-slate-700">{selectedNote.note}</span></div>}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-100">
-                  <tr>
-                    {['SKU','Sản phẩm','Số lượng xuất'].map(h => (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      {['SKU','Sản phẩm','Số lượng xuất'].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -506,6 +507,7 @@ export default function WarehouseOutboundPage() {
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
             <div className="flex justify-end"><Button variant="outline" onClick={() => setShowDetailModal(false)}>Đóng</Button></div>
           </div>
@@ -547,6 +549,7 @@ export default function WarehouseOutboundPage() {
               <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200">
                 <p className="text-xs font-semibold text-slate-500 uppercase">Chi tiết đơn hàng</p>
               </div>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr>{['SKU','Sản phẩm','Số lượng'].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>)}</tr>
@@ -567,9 +570,10 @@ export default function WarehouseOutboundPage() {
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
           )}
-
+          
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" onClick={() => setShowCreateModal(false)}>Hủy</Button>
             <Button onClick={handleCreate} loading={saving} disabled={!selectedOrder}>Tạo phiếu xuất</Button>
@@ -696,28 +700,30 @@ export default function WarehouseOutboundPage() {
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-100">
-                  <tr>
-                    {['SKU','Sản phẩm','Số lượng','Đơn giá','Thành tiền'].map(h => (
-                      <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(orderDetailData.items ?? []).map((item: any) => (
-                    <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 font-mono text-blue-600">{item.product?.sku}</td>
-                      <td className="px-4 py-2.5 text-slate-700">{item.product?.name}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{item.quantity}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-600">{item.unitPrice ? dayjs().format('DD/MM/YYYY') && item.unitPrice.toLocaleString('vi-VN') + ' đ' : '—'}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
-                        {item.unitPrice ? (item.quantity * item.unitPrice).toLocaleString('vi-VN') + ' đ' : '—'}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      {['SKU','Sản phẩm','Số lượng','Đơn giá','Thành tiền'].map(h => (
+                        <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(orderDetailData.items ?? []).map((item: any) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2.5 font-mono text-blue-600">{item.product?.sku}</td>
+                        <td className="px-4 py-2.5 text-slate-700">{item.product?.name}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{item.quantity}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-600">{item.unitPrice ? dayjs().format('DD/MM/YYYY') && item.unitPrice.toLocaleString('vi-VN') + ' đ' : '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
+                          {item.unitPrice ? (item.quantity * item.unitPrice).toLocaleString('vi-VN') + ' đ' : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div className="flex justify-end"><Button variant="outline" onClick={() => setShowOrderDetailModal(false)}>Đóng</Button></div>
