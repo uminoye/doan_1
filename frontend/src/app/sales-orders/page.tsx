@@ -728,6 +728,66 @@ export default function SalesOrdersPage() {
                   <p className="font-black text-xl text-blue-600">{VND(viewOrder.items.reduce((s, i) => s + i.quantity * Number(i.unitPrice), 0))} đ</p>
                 </div>
               </div>
+              {/* Progress stepper */}
+              {(() => {
+                const steps = [
+                  { label: 'Chờ duyệt', icon: '📋' },
+                  { label: 'Kho xuất', icon: '📦' },
+                  { label: 'Đang giao', icon: '🚚' },
+                  { label: 'Hoàn thành', icon: '✅' },
+                ];
+                // Xác định step hiện tại dựa trên status
+                const statusMap: Record<string, number> = {
+                  pending: 0, logistics_rejected: 0,
+                  warehouse_processing: 1, warehouse_rejected: 1, warehouse_delayed: 1,
+                  shipping: 2, logistics_review: 2,
+                  completed: 3, returned: 3, canceled: 3,
+                };
+                const currentStep = statusMap[viewOrder.status] ?? 0;
+                const isRejectedOrDelayed = viewOrder.status === 'warehouse_rejected' || viewOrder.status === 'warehouse_delayed';
+                return (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                    <p className="text-xs font-bold text-slate-500 mb-3">Tiến trình đơn hàng</p>
+                    <div className="flex items-center">
+                      {steps.map((step, idx) => {
+                        const done = idx < currentStep;
+                        const active = idx === currentStep;
+                        const isWarehouse = idx === 1;
+                        let bg = 'bg-slate-100'; let textColor = 'text-slate-400'; let border = 'border-slate-200';
+                        if (done) { bg = 'bg-green-500'; textColor = 'text-white'; border = 'border-green-500'; }
+                        if (active) {
+                          if (isRejectedOrDelayed) { bg = 'bg-red-500'; textColor = 'text-white'; border = 'border-red-500'; }
+                          else { bg = 'bg-blue-600'; textColor = 'text-white'; border = 'border-blue-600'; }
+                        }
+                        return (
+                          <div key={idx} className="flex items-center flex-1">
+                            <div className="flex flex-col items-center">
+                              <div className={`w-9 h-9 rounded-full ${bg} border-2 ${border} flex items-center justify-center text-sm font-black ${textColor} shadow-sm`}>
+                                {done ? '✓' : active ? (isRejectedOrDelayed ? '✗' : '●') : (idx + 1)}
+                              </div>
+                              <p className={`text-xs font-semibold mt-1.5 text-center leading-tight ${active ? (isRejectedOrDelayed ? 'text-red-600' : 'text-blue-600') : 'text-slate-400'}`}>{step.label}</p>
+                              {isRejectedOrDelayed && active && (
+                                <p className="text-[10px] text-red-500 font-medium mt-0.5">{viewOrder.status === 'warehouse_rejected' ? 'Kho từ chối' : 'Dời ngày'}</p>
+                              )}
+                            </div>
+                            {idx < steps.length - 1 && (
+                              <div className={`flex-1 h-1 mx-1 rounded-full ${done ? 'bg-green-400' : 'bg-slate-200'}`} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Chi tiết phiếu xuất kho */}
+                    {viewOrder.outboundNote && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-blue-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd"/></svg>
+                        <p className="text-xs text-slate-500">Phiếu xuất kho: <span className="font-mono font-semibold text-slate-700">{viewOrder.outboundNote.noteNo}</span> · {viewOrder.outboundNote.warehouse?.name || viewOrder.outboundNote.warehouseId}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {viewOrder.note && (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
                   <p className="text-xs font-bold text-slate-500 mb-2">Ghi chú</p>
