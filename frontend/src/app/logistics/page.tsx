@@ -16,6 +16,7 @@ const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
   completed:          { label: 'Đã giao thành công',     tone: 'green' },
   returned:           { label: 'Hoàn trả',                tone: 'red' },
   canceled:           { label: 'Hủy đơn',                tone: 'gray' },
+  canceled_shipping_error: { label: 'Lỗi vận chuyển',    tone: 'red' },
 };
 
 const TONE: Record<string, { bg: string; text: string; border: string }> = {
@@ -42,15 +43,30 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const REJECTION_REASONS = [
-  'Hàng lỗi không hoạt động (Do nhà máy)',
-  'Hàng bể vỡ do vận chuyển',
-  'Khách không lấy hàng',
+  'Khách đổi ý không nhận',
+  'Hư hỏng do Vận chuyển',
+  'Lỗi do Nhà máy sản xuất',
 ];
+
+const REJECTION_MESSAGES: Record<string, { title: string; body: string }> = {
+  'Khách đổi ý không nhận': {
+    title: '⚠️ Khách đổi ý không nhận hàng',
+    body: 'Hàng sẽ được trả về kho gốc. Tồn kho sẽ được cộng lại.',
+  },
+  'Hư hỏng do Vận chuyển': {
+    title: '🚨 Hư hỏng do Vận chuyển',
+    body: 'Yêu cầu ĐVVC đền bù và chuẩn bị đơn bù hàng cho khách. KHÔNG cộng lại tồn kho.',
+  },
+  'Lỗi do Nhà máy sản xuất': {
+    title: '🏭 Lỗi do Nhà máy sản xuất',
+    body: 'Hàng sẽ được chuyển vào Kho Hàng Lỗi. KHÔNG cộng lại vào tồn kho bán hàng.',
+  },
+};
 
 const REJECTION_NOTE = 'Vui lòng ghi rõ lý do từ chối để Sale xem xét và xử lý.';
 
 // ── Progress stepper component ──────────────────────────────────────
-function ShipmentProgressBar({ currentStep, total = 5 }: { currentStep: number; total?: number }) {
+function ShipmentProgressBar({ currentStep, total = 5, disabled = false, isSimulating = false, simulatingPhase = '' }: { currentStep: number; total?: number; disabled?: boolean; isSimulating?: boolean; simulatingPhase?: string }) {
   const steps = [0, 1, 2, 3, 4];
   const labels = ['Kho đang xử lý', 'ĐVVC lấy hàng', 'Đến kho khu vực', 'Đang giao', 'Thành công'];
 
@@ -61,20 +77,22 @@ function ShipmentProgressBar({ currentStep, total = 5 }: { currentStep: number; 
           const done = s < currentStep;
           const active = s === currentStep;
           const failed = currentStep === -1;
-          const color = done
-            ? 'bg-green-500 border-green-500 text-white'
-            : active
-              ? failed
-                ? 'bg-red-500 border-red-500 text-white'
-                : 'bg-blue-600 border-blue-600 text-white'
-              : 'bg-gray-100 border-gray-200 text-gray-400';
+          const color = disabled
+            ? 'bg-gray-300 border-gray-300 text-gray-400'
+            : done
+              ? 'bg-green-500 border-green-500 text-white'
+              : active
+                ? failed
+                  ? 'bg-red-500 border-red-500 text-white'
+                  : 'bg-blue-600 border-blue-600 text-white'
+                : 'bg-gray-100 border-gray-200 text-gray-400';
           return (
             <div key={s} className="flex items-center flex-1 last:flex-none">
               <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-black flex-shrink-0 transition-all ${color} shadow-sm`}>
                 {done ? '✓' : active ? (failed ? '✗' : '●') : i + 1}
               </div>
               {i < steps.length - 1 && (
-                <div className={`flex-1 h-1 mx-1 rounded-full transition-all ${done ? 'bg-green-400' : 'bg-gray-200'}`} />
+                <div className={`flex-1 h-1 mx-1 rounded-full transition-all ${done ? 'bg-green-400' : disabled ? 'bg-gray-200' : 'bg-gray-200'}`} />
               )}
             </div>
           );
@@ -82,11 +100,19 @@ function ShipmentProgressBar({ currentStep, total = 5 }: { currentStep: number; 
       </div>
       <div className="flex justify-between px-0.5">
         {labels.map((l, i) => (
-          <span key={i} className={`text-[10px] font-semibold text-center ${i === currentStep ? 'text-blue-600 font-bold' : 'text-slate-400'}`} style={{ maxWidth: '60px' }}>
+          <span key={i} className={`text-[10px] font-semibold text-center ${i === currentStep && !disabled ? 'text-blue-600 font-bold' : 'text-slate-400'}`} style={{ maxWidth: '60px' }}>
             {l}
           </span>
         ))}
       </div>
+      {isSimulating && simulatingPhase && (
+        <div className="text-center">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-bold animate-pulse">
+            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDuration: '0.6s' }} />
+            {simulatingPhase}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -110,6 +136,15 @@ function TrackingModal({
   detailStep,
   setDetailStep,
   totalAmount,
+  // Simulation state from parent
+  simulationStep,
+  isSimulating,
+  simulatingPhase,
+  // Rejection warning modal
+  showRejectWarning,
+  rejectWarningReason,
+  onConfirmReject,
+  onCancelReject,
 }: {
   order: any;
   shipment: Shipment;
@@ -128,11 +163,22 @@ function TrackingModal({
   detailStep: 'view' | 'reject';
   setDetailStep: (s: 'view' | 'reject') => void;
   totalAmount: (items: any[]) => number;
+  simulationStep?: number;
+  isSimulating?: boolean;
+  simulatingPhase?: string;
+  showRejectWarning?: boolean;
+  rejectWarningReason?: string;
+  onConfirmReject?: () => void;
+  onCancelReject?: () => void;
 }) {
   const isCompleted = shipment.status === 'completed';
   const isFailed = shipment.status === 'failed';
   const isShipping = shipment.status === 'shipping';
-  const step = isFailed ? -1 : shipment.currentStep;
+  const isWarehouseProcessing = shipment.status === 'warehouse_processing';
+
+  // Auto simulation display: use simulationStep if simulating, otherwise use shipment.currentStep
+  const displayStep = isSimulating ? simulationStep! : (isFailed ? -1 : shipment.currentStep);
+  const step = displayStep;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -173,10 +219,28 @@ function TrackingModal({
             </div>
           </div>
 
-          {/* Thanh tiến trình */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-            <ShipmentProgressBar currentStep={step} />
-          </div>
+          {/* Thanh tiến trình — YÊU CẦU 1: Ẩn khi warehouse_processing */}
+          {isWarehouseProcessing && !isSimulating ? (
+            /* Box chờ kho xuất hàng — Tuyệt đối không cho thao tác */
+            <div className="bg-gray-100 border border-gray-200 rounded-2xl p-6 flex flex-col items-center gap-2 opacity-70">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                  <span className="text-gray-500 text-sm">⏳</span>
+                </div>
+                <span className="font-extrabold text-gray-500 text-base">Đang chờ Kho xuất hàng...</span>
+              </div>
+              <p className="text-xs text-gray-400 text-center">Kho đang đóng gói và bàn giao cho ĐVVC. Logistics không thể thao tác ở bước này.</p>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <ShipmentProgressBar
+                currentStep={step}
+                disabled={isWarehouseProcessing && !isSimulating}
+                isSimulating={isSimulating}
+                simulatingPhase={simulatingPhase}
+              />
+            </div>
+          )}
 
           {/* Bảng sản phẩm */}
           <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -224,70 +288,110 @@ function TrackingModal({
           )}
 
           {/* Hành động theo step */}
-          {!isCompleted && !isFailed && (
+          {!isCompleted && !isFailed && !isWarehouseProcessing && (
             <div className="space-y-3">
 
-              {/* Step 0–2: Tiến bước */}
-              {step >= 0 && step <= 2 && (
+              {/* Step 1–2: Tiến bước (Logistics có thể bấm tiến thủ công) */}
+              {step >= 1 && step <= 2 && !isSimulating && (
                 <div className="flex gap-3">
-                  {step === 0 ? (
-                    <div className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-400 font-extrabold text-sm flex items-center justify-center cursor-not-allowed border border-slate-200">
-                      ⏳ Đang chờ Kho xuất hàng...
-                    </div>
-                  ) : (
-                    <button
-                      onClick={onAdvance}
-                      disabled={saving}
-                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                    >
-                      {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
-                      Tiến bước → {SHIPMENT_STEP_LABELS[(step + 1) as keyof typeof SHIPMENT_STEP_LABELS]}
-                    </button>
-                  )}
+                  <button
+                    onClick={onAdvance}
+                    disabled={saving}
+                    className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-extrabold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                  >
+                    {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                    Tiến bước → {SHIPMENT_STEP_LABELS[(step + 1) as keyof typeof SHIPMENT_STEP_LABELS]}
+                  </button>
                 </div>
               )}
 
-              {/* Step 3 — ĐANG GIAO: BOM / HƯ / Giao thử */}
-              {step === 3 && (
+              {/* Step 3: ✅ Nhận + ❌ Từ chối — YÊU CẦU 3 */}
+              {step === 3 && !isSimulating && (
                 <div className="space-y-3">
                   <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-700 text-center">
-                    📦 Hàng đang trên đường giao — Tại bước này có <strong>20% rủi ro khách BOM</strong> hoặc <strong>hư đơn do vận chuyển</strong>
+                    📦 Hàng đang trên đường giao — Hãy chờ khách xác nhận
                   </div>
                   <div className="flex gap-3">
-                    {/* BOM — Khách từ chối */}
+                    {/* ✅ Khách nhận hàng */}
+                    <button
+                      onClick={onConfirm}
+                      disabled={saving}
+                      className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      {saving ? <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <span className="text-2xl">✅</span>}
+                      <span>Khách nhận hàng</span>
+                    </button>
+                    {/* ❌ Khách từ chối */}
                     <button
                       onClick={() => { setDetailStep('reject'); setRejectReason(''); setRejectNote(''); }}
-                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 cursor-pointer"
-                    >
-                      <span className="text-base">✗</span>
-                      <span>BOM</span>
-                    </button>
-                    {/* HƯ — Hàng bị hư */}
-                    <button
-                      onClick={() => { setRejectReason('Hàng bể vỡ do vận chuyển'); onReject('Hàng bể vỡ do vận chuyển'); }}
                       disabled={saving}
-                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-400 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                      className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
                     >
-                      <span className="text-base">⚠</span>
-                      <span>HƯ</span>
-                    </button>
-                    {/* Giao thử */}
-                    <button
-                      onClick={onSimulate}
-                      disabled={saving}
-                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-purple-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
-                    >
-                      {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : <span className="text-base">🎲</span>}
-                      <span>Giao thử</span>
+                      <span className="text-2xl">❌</span>
+                      <span>Khách từ chối</span>
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Step 4 (simulation done): ✅ Xác nhận giao + ❌ Từ chối */}
+              {step === 4 && isSimulating && (
+                <div className="space-y-3">
+                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 text-center font-semibold">
+                    ✓ Đã giao tới nơi — Logistics xác nhận kết quả
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={onConfirm}
+                      disabled={saving}
+                      className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      {saving ? <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <span className="text-2xl">✅</span>}
+                      <span>Khách nhận hàng</span>
+                    </button>
+                    <button
+                      onClick={() => { setDetailStep('reject'); setRejectReason(''); setRejectNote(''); }}
+                      disabled={saving}
+                      className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      <span className="text-2xl">❌</span>
+                      <span>Khách từ chối</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4 (completed, not simulating): nút Demo lại */}
+              {step === 4 && !isSimulating && !isCompleted && !isFailed && (
+                <div className="space-y-3">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-600 text-center">
+                    ✓ Đơn đã giao tới nơi — Logistics xác nhận kết quả
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={onConfirm}
+                      disabled={saving}
+                      className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      {saving ? <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <span className="text-2xl">✅</span>}
+                      <span>Khách nhận hàng</span>
+                    </button>
+                    <button
+                      onClick={() => { setDetailStep('reject'); setRejectReason(''); setRejectNote(''); }}
+                      disabled={saving}
+                      className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex flex-col items-center gap-1 disabled:opacity-60 cursor-pointer"
+                    >
+                      <span className="text-2xl">❌</span>
+                      <span>Khách từ chối</span>
+                    </button>
+                  </div>
+                  {/* YÊU CẦU 2: Nút Demo lại để chạy simulation thủ công */}
                   <button
-                    onClick={onConfirm}
+                    onClick={onSimulate}
                     disabled={saving}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-white border-2 border-dashed border-purple-300 text-purple-600 font-bold text-sm hover:bg-purple-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
-                    {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
-                    ✓ Xác nhận giao thành công
+                    🔄 Demo lại từ đầu
                   </button>
                 </div>
               )}
@@ -296,24 +400,24 @@ function TrackingModal({
                 Bước {step + 1}/5 — {SHIPMENT_STEP_LABELS[step as keyof typeof SHIPMENT_STEP_LABELS] || '—'}
               </p>
 
-              {/* Reject reason picker */}
+              {/* Reject reason picker — YÊU CẦU 3: Modal 3 lý do */}
               {detailStep === 'reject' && (
                 <div className="space-y-4">
-                  <p className="text-sm font-bold text-slate-700">Chọn lý do khách từ chối / hoàn hàng:</p>
+                  <p className="text-sm font-bold text-slate-700">Chọn lý do khách từ chối:</p>
                   <div className="space-y-2">
                     {REJECTION_REASONS.map(r => (
                       <button key={r} onClick={() => setRejectReason(r)}
-                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                        className={`w-full text-left px-4 py-3.5 rounded-xl border-2 transition-all ${
                           rejectReason === r ? 'border-red-400 bg-red-50 shadow-sm' : 'border-slate-200 bg-white hover:border-red-300'
                         }`}>
                         <span className={`text-sm font-semibold ${rejectReason === r ? 'text-red-700' : 'text-slate-700'}`}>{r}</span>
                       </button>
                     ))}
                   </div>
-                  {(rejectReason === REJECTION_NOTE || rejectReason.includes('khác')) && (
-                    <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={2}
-                      placeholder="Mô tả chi tiết..."
-                      className="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-red-200 resize-none" />
+                  {rejectReason && REJECTION_MESSAGES[rejectReason] && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                      <p className="text-amber-700 font-semibold text-sm">{REJECTION_MESSAGES[rejectReason].body}</p>
+                    </div>
                   )}
                   <div className="flex gap-3">
                     <button onClick={() => setDetailStep('view')}
@@ -326,7 +430,7 @@ function TrackingModal({
                       className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                     >
                       {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
-                      ✓ Xác nhận từ chối
+                      Xác nhận từ chối
                     </button>
                   </div>
                 </div>
@@ -335,8 +439,7 @@ function TrackingModal({
           )}
 
           {/* HOÀN THÀNH: Khách đã trả tiền / Hoàn hàng */}
-          {isCompleted && (
-            <div className="space-y-3">
+          {isCompleted && (            <div className="space-y-3">
               <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 text-center">
                 <p className="text-green-700 font-extrabold text-lg">✓ Giao hàng thành công!</p>
                 <p className="text-green-600 text-sm mt-1">Cảm ơn quý khách đã mua sắm tại WMS.</p>
@@ -398,6 +501,41 @@ function TrackingModal({
               <p className="text-red-600 text-sm mt-1">Xem lý do từ chối ở trên. Hệ thống đã tự xử lý theo quy trình.</p>
             </div>
           )}
+
+          {/* YÊU CẦU 3: Warning Modal cho 3 lý do từ chối */}
+          {showRejectWarning && rejectWarningReason && REJECTION_MESSAGES[rejectWarningReason] && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-2xl px-5 py-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xl">⚠️</span>
+                </div>
+                <div>
+                  <p className="font-extrabold text-red-700 text-base">{REJECTION_MESSAGES[rejectWarningReason].title}</p>
+                  <p className="text-red-600 text-sm mt-1">{REJECTION_MESSAGES[rejectWarningReason].body}</p>
+                </div>
+              </div>
+              <div className="bg-white border border-red-200 rounded-xl px-4 py-3">
+                <p className="text-xs font-bold text-red-500 mb-1">LÝ DO ĐÃ CHỌN</p>
+                <p className="text-red-700 font-semibold text-sm">{rejectWarningReason}</p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={onCancelReject}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all cursor-pointer"
+                >
+                  ← Hủy bỏ
+                </button>
+                <button
+                  onClick={onConfirmReject}
+                  disabled={saving}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-extrabold text-sm shadow-md hover:shadow-lg transition-all disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {saving ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : null}
+                  Xác nhận từ chối
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -440,10 +578,29 @@ export default function LogisticsPage() {
   const [newCarrierCode, setNewCarrierCode] = useState('');
   const [addCarrierSaving, setAddCarrierSaving] = useState(false);
 
-  // Modal thông báo
-  const [notifModal, setNotifModal] = useState(false);
+  // YÊU CẦU 2: Simulation state (Frontend-only auto-stepper)
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationStep, setSimulationStep] = useState(0);
+  const [simulatingPhase, setSimulatingPhase] = useState('');
+
+  // YÊU CẦU 3: Rejection warning modal
+  const [showRejectWarning, setShowRejectWarning] = useState(false);
+  const [rejectWarningReason, setRejectWarningReason] = useState('');
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // YÊU CẦU 2: Auto-start simulation khi shipment chuyển sang shipping (sau khi kho xuất hàng)
+  useEffect(() => {
+    if (!trackingShipment || !trackingOrder) return;
+    if (trackingShipment.status === 'shipping' && !isSimulating && trackingShipment.currentStep < 4) {
+      const timer = setTimeout(() => {
+        setSimulationStep(1);
+        setIsSimulating(true);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackingShipment?.status, trackingShipment?.currentStep, trackingOrder?.id]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -551,6 +708,12 @@ export default function LogisticsPage() {
     setTrackingRejectReason('');
     setTrackingRejectNote('');
     setTrackingShipment(null);
+    // Reset simulation state khi mở modal
+    setIsSimulating(false);
+    setSimulationStep(0);
+    setSimulatingPhase('');
+    setShowRejectWarning(false);
+    setRejectWarningReason('');
     try {
       const res = await shipmentService.getByOrderId(order.id);
       setTrackingShipment(res.data);
@@ -569,23 +732,60 @@ export default function LogisticsPage() {
     finally { setSaving(false); }
   };
 
+  /* ── YÊU CẦU 2: useEffect Auto-Simulation (Frontend Demo 5 giây) ──
+   * Giây 0:   "Đã xuất kho"  → step = 1
+   * Giây 2.5: "Đang giao hàng" → step = 3
+   * Giây 5:   "Đã giao tới nơi" → step = 4 (gọi API cập nhật real currentStep = 4)
+   */
+  useEffect(() => {
+    if (!isSimulating || !trackingOrder) return;
+
+    const phases = [
+      { at: 0,    step: 1, label: '⏳ Đang chờ Kho xuất hàng...' },
+      { at: 0,    step: 1, label: '✓ Đã xuất kho - ĐVVC nhận hàng' },
+      { at: 2500, step: 3, label: '🚚 Đang giao hàng đến địa chỉ...' },
+      { at: 5000, step: 4, label: '📦 Đã giao tới nơi - Chờ xác nhận' },
+    ];
+
+    // Immediately set step 1
+    setSimulationStep(1);
+    setSimulatingPhase('✓ Đã xuất kho - ĐVVC nhận hàng');
+
+    const timers: NodeJS.Timeout[] = [];
+
+    // At 2.5s: jump to step 3 "Đang giao hàng"
+    timers.push(setTimeout(() => {
+      setSimulationStep(3);
+      setSimulatingPhase('🚚 Đang giao hàng đến địa chỉ...');
+    }, 2500));
+
+    // At 5s: jump to step 4 "Đã giao tới nơi" + call API to persist
+    timers.push(setTimeout(async () => {
+      setSimulationStep(4);
+      setSimulatingPhase('📦 Đã giao tới nơi - Chờ xác nhận');
+      setIsSimulating(false); // Stop simulation after reaching step 4
+
+      // Gọi API advanceStep để cập nhật backend thực
+      try {
+        const res = await shipmentService.advanceStep(trackingOrder.id);
+        setTrackingShipment((prev: any) => ({
+          ...prev,
+          currentStep: res.data.currentStep,
+          status: res.data.currentStep === 4 ? 'completed' : 'shipping',
+        }));
+        fetchData();
+      } catch (_) {}
+    }, 5000));
+
+    return () => { timers.forEach(clearTimeout); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSimulating, trackingOrder?.id]);
+
   const handleSimulate = async () => {
     if (!trackingOrder) return;
-    setSaving(true);
-    try {
-      const res = await shipmentService.simulateDelivery(trackingOrder.id);
-      const result = res.data;
-      if (result.reason) {
-        // Từ chối
-        alert(`⚠️ Khách từ chối!\nLý do: ${result.reason}\n\nHệ thống tự động xử lý theo quy trình.`);
-        setTrackingShipment((prev: any) => ({ ...prev, status: 'failed', rejectionReason: result.reason }));
-      } else {
-        alert(`✓ ${result.message}`);
-        setTrackingShipment((prev: any) => ({ ...prev, currentStep: result.currentStep, status: result.currentStep === 4 ? 'completed' : 'shipping' }));
-      }
-      fetchData();
-    } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
-    finally { setSaving(false); }
+    // Reset về step 1 trước khi bắt đầu simulation
+    setSimulationStep(1);
+    setIsSimulating(true);
   };
 
   const handleConfirmReceived = async () => {
@@ -602,14 +802,29 @@ export default function LogisticsPage() {
 
   const handleTrackingReject = async (reason: string) => {
     if (!trackingOrder || !reason) { alert('Vui lòng chọn lý do'); return; }
+    // Hiện warning modal trước — YÊU CẦU 3
+    setRejectWarningReason(reason);
+    setShowRejectWarning(true);
+  };
+
+  /* ── YÊU CẦU 3: Confirm Reject — gọi API với reason đã chọn ── */
+  const handleConfirmReject = async () => {
+    if (!trackingOrder || !rejectWarningReason) return;
     setSaving(true);
     try {
-      await shipmentService.customerReject(trackingOrder.id, reason);
-      setTrackingShipment((prev: any) => ({ ...prev, status: 'failed', rejectionReason: reason }));
+      await shipmentService.customerReject(trackingOrder.id, rejectWarningReason);
+      setTrackingShipment((prev: any) => ({ ...prev, status: 'failed', rejectionReason: rejectWarningReason }));
+      setShowRejectWarning(false);
+      setRejectWarningReason('');
       alert('Đã xử lý từ chối của khách!');
       fetchData();
     } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
     finally { setSaving(false); }
+  };
+
+  const handleCancelReject = () => {
+    setShowRejectWarning(false);
+    setRejectWarningReason('');
   };
 
   const handleAddCarrier = async () => {
@@ -1047,7 +1262,7 @@ export default function LogisticsPage() {
           order={trackingOrder}
           shipment={trackingShipment}
           carriers={carriers}
-          onClose={() => { setTrackingOrder(null); setTrackingShipment(null); }}
+          onClose={() => { setTrackingOrder(null); setTrackingShipment(null); setIsSimulating(false); }}
           onAdvance={handleAdvance}
           onSimulate={handleSimulate}
           onConfirm={handleConfirmReceived}
@@ -1061,6 +1276,13 @@ export default function LogisticsPage() {
           detailStep={trackingStep}
           setDetailStep={setTrackingStep}
           totalAmount={totalAmount}
+          simulationStep={simulationStep}
+          isSimulating={isSimulating}
+          simulatingPhase={simulatingPhase}
+          showRejectWarning={showRejectWarning}
+          rejectWarningReason={rejectWarningReason}
+          onConfirmReject={handleConfirmReject}
+          onCancelReject={handleCancelReject}
         />
       )}
 

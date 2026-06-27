@@ -121,7 +121,11 @@ export class ShipmentService {
   }
 
   /**
-   * Khách từ chối (20% ngẫu nhiên trong demo)
+   * Khách từ chối — xử lý 3 lý do với logic tồn kho khác nhau:
+   *
+   * Lý do 1 "Hàng lỗi do nhà máy": cancelled_shipping_error → Kho hàng lỗi, KHÔNG cộng tồn
+   * Lý do 2 "Hư hỏng do vận chuyển": cancelled_shipping_error → chỉ thông báo, KHÔNG cộng tồn
+   * Lý do 3 "Khách đổi ý không nhận": cancelled → trả về kho gốc, CỘNG lại tồn
    */
   async customerReject(salesOrderId: string, reason: string) {
     const shipment = await prisma.shipment.findUnique({
@@ -131,19 +135,85 @@ export class ShipmentService {
     if (!shipment) throw new AppError(404, 'Không tìm thấy lộ trình vận chuyển');
     if (shipment.customerRejected) throw new AppError(400, 'Đơn đã được xử lý từ chối trước đó');
 
-    const reasonKey = REJECTION_REASONS.includes(reason) ? reason : REJECTION_REASONS[0];
+    // Chuẩn hóa lý do
+    const REJECT_FACTORY   = 'Hàng lỗi do Nhà máy sản xuất';
+    const REJECT_SHIP_DAMAGE = 'Hư hỏng do Vận chuyển';
+    const REJECT_CHANGED_MIND = 'Khách đổi ý không nhận';
+
+    let finalReason = reason;
+    if (reason.includes('lỗi') || reason.includes('nhà máy') || reason.includes('factory')) {
+      finalReason = REJECT_FACTORY;
+    } else if (reason.includes('bể') || reason.includes('vỡ') || reason.includes('hư') || reason.includes('vận chuyển') || reason.includes('ship')) {
+      finalReason = REJECT_SHIP_DAMAGE;
+    } else {
+      finalReason = REJECT_CHANGED_MIND;
+    }
 
     await prisma.$transaction(async (tx) => {
-      // Đánh dấu từ chối
+      // Đánh dấu shipment thất bại
       await tx.shipment.update({
         where: { id: shipment.id },
-        data: { customerRejected: true, rejectionReason: reasonKey, status: 'failed' },
+        data: { customerRejected: true, rejectionReason: finalReason, status: 'failed' },
       });
 
       const order = shipment.salesOrder;
+      const outboundNote = order.outboundNote;
+      const warehouseId = outboundNote?.warehouseId;
 
-      if (reasonKey.includes('Hàng lỗi')) {
-        // Hàng lỗi → vào Kho Hàng Lỗi, không cộng tồn lại
+      // ── LÝ DO 1: Khách đổi ý → trả về kho gốc + CỘNG tồn ──
+      if (finalReason === REJECT_CHANGED_MIND) {
+        if (warehouseId) {
+          for (const item of order.items) {
+            const bal = await tx.inventoryBalance.findUnique({
+              where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+            });
+            if (bal) {
+              await tx.inventoryBalance.update({
+                where: { warehouseId_productId: { warehouseId, productId: item.productId } },
+                data: { onHandQty: { increment: item.quantity } },
+              });
+            } else {
+              await tx.inventoryBalance.create({
+                data: { warehouseId, productId: item.productId, onHandQty: item.quantity, reservedQty: 0 },
+              });
+            }
+            await tx.inventoryTransaction.create({
+              data: {
+                warehouseId, productId: item.productId,
+                transactionType: 'IN', quantity: item.quantity,
+                referenceType: 'return', referenceId: salesOrderId,
+                note: `Hoàn trả do khách đổi ý không nhận - Đơn ${order.orderNo}`,
+              },
+            });
+          }
+        }
+        await tx.salesOrder.update({ where: { id: salesOrderId }, data: { status: 'canceled' } });
+        await tx.deliveryRequest.updateMany({ where: { salesOrderId }, data: { status: 'canceled' } });
+        await notificationService.create({
+          type: 'customer_rejected', orderId: salesOrderId, shipmentId: shipment.id,
+          title: 'Khách đổi ý - Hoàn trả kho',
+          message: `Đơn ${order.orderNo}: Khách đổi ý không nhận hàng. Hàng đã hoàn trả về kho gốc.`,
+        });
+      }
+
+      // ── LÝ DO 2: Hư hỏng do vận chuyển → cancelled_shipping_error, KHÔNG cộng tồn ──
+      else if (finalReason === REJECT_SHIP_DAMAGE) {
+        await tx.salesOrder.update({ where: { id: salesOrderId }, data: { status: 'canceled_shipping_error' } });
+        await tx.deliveryRequest.updateMany({ where: { salesOrderId }, data: { status: 'canceled_shipping_error' } });
+        await notificationService.create({
+          type: 'compensation', orderId: salesOrderId, shipmentId: shipment.id,
+          title: 'Yêu cầu bù hàng cho khách',
+          message: `Đơn ${order.orderNo}: "${finalReason}". Cần bù hàng cho khách ngay.`,
+        });
+        await notificationService.create({
+          type: 'carrier_damage', orderId: salesOrderId, shipmentId: shipment.id,
+          title: 'Đòi bồi thường từ ĐVVC',
+          message: `Đơn ${order.orderNo}: "${finalReason}" - Yêu cầu bồi thường từ đơn vị vận chuyển.`,
+        });
+      }
+
+      // ── LÝ DO 3: Lỗi do Nhà máy → defective warehouse, KHÔNG cộng tồn ──
+      else {
         const defectiveWh = await tx.warehouse.findFirst({ where: { isDefectiveWarehouse: true } });
         if (defectiveWh) {
           for (const item of order.items) {
@@ -152,85 +222,27 @@ export class ShipmentService {
               create: { warehouseId: defectiveWh.id, productId: item.productId, onHandQty: item.quantity, reservedQty: 0 },
               update: { onHandQty: { increment: item.quantity } },
             });
-          }
-        }
-        await notificationService.create({
-          type: 'customer_rejected',
-          orderId: salesOrderId,
-          shipmentId: shipment.id,
-          title: 'Khách từ chối - Hàng lỗi',
-          message: `Đơn ${order.orderNo}: Khách từ chối nhận hàng vì "${reasonKey}". Hàng đã chuyển vào Kho Hàng Lỗi - Phân Loại.`,
-        });
-
-      } else if (reasonKey.includes('bể vỡ')) {
-        // Hàng bể vỡ → thông báo bù hàng + đòi bồi thường
-        await notificationService.create({
-          type: 'compensation',
-          orderId: salesOrderId,
-          shipmentId: shipment.id,
-          title: 'Yêu cầu bù hàng cho khách',
-          message: `Đơn ${order.orderNo}: Khách từ chối vì "${reasonKey}". Cần bù hàng cho khách ngay.`,
-        });
-        await notificationService.create({
-          type: 'carrier_damage',
-          orderId: salesOrderId,
-          shipmentId: shipment.id,
-          title: 'Đòi bồi thường từ đơn vị vận chuyển',
-          message: `Đơn ${order.orderNo}: "${reasonKey}" - Yêu cầu bồi thường từ đơn vị vận chuyển.`,
-        });
-
-      } else {
-        // Khách không lấy → trả về kho ban đầu, cộng tồn
-        const outboundNote = order.outboundNote;
-        if (outboundNote) {
-          for (const item of order.items) {
-            const bal = await tx.inventoryBalance.findUnique({
-              where: { warehouseId_productId: { warehouseId: outboundNote.warehouseId, productId: item.productId } },
-            });
-            if (bal) {
-              await tx.inventoryBalance.update({
-                where: { warehouseId_productId: { warehouseId: outboundNote.warehouseId, productId: item.productId } },
-                data: { onHandQty: { increment: item.quantity } },
-              });
-            } else {
-              await tx.inventoryBalance.create({
-                data: { warehouseId: outboundNote.warehouseId, productId: item.productId, onHandQty: item.quantity, reservedQty: 0 },
-              });
-            }
             await tx.inventoryTransaction.create({
               data: {
-                warehouseId: outboundNote.warehouseId,
-                productId: item.productId,
-                transactionType: 'IN',
-                quantity: item.quantity,
-                referenceType: 'return',
-                referenceId: salesOrderId,
-                note: `Hoàn trả do khách không lấy hàng - Đơn ${order.orderNo}`,
+                warehouseId: defectiveWh.id, productId: item.productId,
+                transactionType: 'IN', quantity: item.quantity,
+                referenceType: 'defective', referenceId: salesOrderId,
+                note: `Chuyển vào Kho Lỗi - Lý do: ${finalReason} - Đơn ${order.orderNo}`,
               },
             });
           }
         }
+        await tx.salesOrder.update({ where: { id: salesOrderId }, data: { status: 'canceled_shipping_error' } });
+        await tx.deliveryRequest.updateMany({ where: { salesOrderId }, data: { status: 'canceled_shipping_error' } });
         await notificationService.create({
-          type: 'customer_rejected',
-          orderId: salesOrderId,
-          shipmentId: shipment.id,
-          title: 'Khách không lấy hàng - Hoàn trả kho',
-          message: `Đơn ${order.orderNo}: Khách không lấy hàng. Hàng đã hoàn trả về kho ban đầu.`,
+          type: 'customer_rejected', orderId: salesOrderId, shipmentId: shipment.id,
+          title: 'Hàng lỗi - Chuyển Kho Hàng Lỗi',
+          message: `Đơn ${order.orderNo}: "${finalReason}". Hàng đã chuyển vào Kho Hàng Lỗi - Phân loại.`,
         });
       }
-
-      // Cập nhật trạng thái
-      await tx.salesOrder.update({
-        where: { id: salesOrderId },
-        data: { status: 'returned' },
-      });
-      await tx.deliveryRequest.updateMany({
-        where: { salesOrderId },
-        data: { status: 'returned' },
-      });
     });
 
-    return { message: 'Đã xử lý từ chối của khách', reason: reasonKey };
+    return { message: 'Đã xử lý từ chối của khách', reason: finalReason };
   }
 
   /**
