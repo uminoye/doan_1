@@ -587,6 +587,9 @@ export default function LogisticsPage() {
   const [showRejectWarning, setShowRejectWarning] = useState(false);
   const [rejectWarningReason, setRejectWarningReason] = useState('');
 
+  // Modal thông báo
+  const [notifModal, setNotifModal] = useState(false);
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // YÊU CẦU 2: Auto-start simulation khi shipment chuyển sang shipping (sau khi kho xuất hàng)
