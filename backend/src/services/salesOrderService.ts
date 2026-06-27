@@ -418,7 +418,9 @@ export class SalesOrderService {
     return { message: 'Đơn đã quay về trạng thái chờ duyệt. Logistics sẽ xử lý lại.' };
   }
 
-  /** Sale lập lại đơn (dùng lại mã đơn cũ đã bị xóa) */
+  /** Sale lập lại đơn
+   * - pending        → update đơn hiện tại (giữ orderNo cũ)
+   * - warehouse_*    → xóa đơn cũ, tạo đơn mới với orderNo mới */
   async recreateOrder(salesOrderId: string, data: {
     customerId: string;
     expectedDeliveryDate?: string;
@@ -435,25 +437,54 @@ export class SalesOrderService {
       throw new AppError(400, 'Đơn hàng phải có ít nhất một sản phẩm');
     }
 
-    const order = await prisma.salesOrder.create({
-      data: {
-        orderNo: oldOrder.orderNo, // reuse old code
-        customerId: data.customerId,
-        orderDate: new Date(),
-        expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
-        note: data.note,
-        status: 'pending',
-        createdById: data.createdById,
-        items: {
-          create: data.items.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice || 0,
-          })),
+    if (oldOrder.status === 'pending') {
+      // Update đơn đang chờ duyệt — giữ nguyên orderNo
+      await prisma.salesOrder.update({
+        where: { id: salesOrderId },
+        data: {
+          customerId: data.customerId,
+          expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
+          note: data.note || null,
+          status: 'pending',
         },
-      },
-    });
+      });
+      // Xóa items cũ, tạo lại items mới
+      await prisma.salesOrderItem.deleteMany({ where: { salesOrderId } });
+      await prisma.salesOrderItem.createMany({
+        data: data.items.map(item => ({
+          salesOrderId,
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice || 0,
+        })),
+      });
+      return this.getById(salesOrderId);
+    } else {
+      // warehouse_rejected / warehouse_delayed → xóa đơn cũ, tạo đơn mới với orderNo mới
+      await prisma.salesOrder.delete({ where: { id: salesOrderId } });
 
-    return this.getById(order.id);
+      const count = await prisma.salesOrder.count();
+      const orderNo = `SO${String(count + 1).padStart(6, '0')}`;
+
+      const order = await prisma.salesOrder.create({
+        data: {
+          orderNo,
+          customerId: data.customerId,
+          orderDate: new Date(),
+          expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
+          note: data.note || null,
+          status: 'pending',
+          createdById: data.createdById,
+          items: {
+            create: data.items.map(item => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice || 0,
+            })),
+          },
+        },
+      });
+      return this.getById(order.id);
+    }
   }
 }

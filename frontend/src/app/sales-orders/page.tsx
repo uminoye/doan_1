@@ -262,10 +262,7 @@ export default function SalesOrdersPage() {
         fetchData();
       } catch (e: any) { alert(e.response?.data?.error || 'Lỗi xác nhận dời ngày'); }
     } else {
-      // Recreate — gọi confirmDelay trước (reset về pending) rồi mở form
-      try {
-        await salesOrderService.confirmDelay(warehouseRejectedOrder.id);
-      } catch (_) { /* có thể đã ở pending rồi */ }
+      // Recreate — mở form để Sale sửa thông tin rồi gửi lại
       openCreate();
       setEditingId(warehouseRejectedOrder.id);
       setRecreateMode(true);
