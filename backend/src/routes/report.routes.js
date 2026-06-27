@@ -19,15 +19,13 @@ router.get('/dashboard', async (req, res) => {
       prisma.salesOrder.count(),
       prisma.salesOrder.count({ where: { status: 'pending' } }),
       prisma.salesOrder.count({ where: { status: 'completed' } }),
-      prisma.product.count({
-        where: {
-          inventoryBalances: {
-            some: {
-              onHandQty: { lt: prisma.product.fields.minStock },
-            },
-          },
-        },
-      }),
+      // low stock: products whose onHandQty < minStock (cross-field filter done in JS)
+      prisma.inventoryBalance.findMany({
+        where: { onHandQty: { gt: 0 } },
+        include: { product: true },
+      }).then(balances =>
+        balances.filter(b => b.product && b.onHandQty < b.product.minStock)
+      ),
       prisma.salesOrder.findMany({
         take: 10,
         orderBy: { createdAt: 'desc' },

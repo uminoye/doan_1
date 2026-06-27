@@ -24,12 +24,14 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Scale về mức vừa mắt (tương đương zoom 80%) trên màn lớn */
+/* Scale về mức vừa mắt (tương đương zoom 80%) trên màn lớn - disabled for better UX */
+/*
 @media (min-width: 1280px) {
   html {
     zoom: 0.875;
   }
 }
+*/
 
 a {
   color: inherit;
