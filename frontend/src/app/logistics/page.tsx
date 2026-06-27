@@ -448,10 +448,9 @@ export default function LogisticsPage() {
         shipmentService.getAllTracking({ limit: 200 }),
         carrierService.getAll(),
       ]);
-      const allOrders: any[] = [];
-      (oRes.data?.data || []).forEach((r: any) => { if (r.salesOrder) allOrders.push(r.salesOrder); });
-      const directOrders = (oRes.data?.data || []).filter((r: any) => !r.salesOrder && r.orderNo);
-      setOrders([...allOrders, ...directOrders]);
+      // Backend trả trực tiếp SalesOrder[] (không còn wrap trong DeliveryRequest)
+      const rawOrders: any[] = oRes.data?.data || [];
+      setOrders(rawOrders);
       setNotifications(nRes.data?.data || []);
       setShipments(sRes.data?.data || []);
       const dbC = (cRes.data || []) as Carrier[];

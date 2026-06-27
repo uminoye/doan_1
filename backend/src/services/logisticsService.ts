@@ -6,30 +6,29 @@ export class LogisticsService {
     const { page = 1, limit = 20, status } = params || {};
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-    if (status) where.status = status;
+    // Nếu không filter theo status cụ thể → mặc định lấy đơn chờ điều phối
+    // (SalesOrder.status = 'pending' = Sale vừa tạo, chưa qua Logistics)
+    const where: any = status
+      ? { status }
+      : { status: { in: ['pending', 'logistics_review'] } };
 
-    const [requests, total] = await Promise.all([
-      prisma.deliveryRequest.findMany({
+    const [orders, total] = await Promise.all([
+      prisma.salesOrder.findMany({
         skip,
         take: limit,
         where,
         include: {
-          salesOrder: {
-            include: {
-              customer: true,
-              createdBy: { include: { role: true } },
-              items: { include: { product: true } },
-              outboundNote: { include: { warehouse: true } },
-            },
-          },
+          customer: true,
+          createdBy: { include: { role: true } },
+          items: { include: { product: true } },
+          outboundNote: { include: { warehouse: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
-      prisma.deliveryRequest.count({ where }),
+      prisma.salesOrder.count({ where }),
     ]);
 
-    return { data: requests, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return { data: orders, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async getById(id: string) {
