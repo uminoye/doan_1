@@ -824,6 +824,7 @@ export default function SalesOrdersPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </div>
               <div className="flex justify-end">
                 <Button variant="outline" onClick={() => setViewOrder(null)}>Đóng</Button>
