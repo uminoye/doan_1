@@ -28,6 +28,7 @@ export interface Warehouse {
   name: string;
   location?: string;
   createdAt: string;
+  isDefectiveWarehouse?: boolean;
 }
 
 export interface Product {
